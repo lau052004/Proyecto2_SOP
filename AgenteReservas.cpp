@@ -1,3 +1,6 @@
+
+// $ ./controlador –i horaInicio –f horafinal –s segundoshora –t totalpersonas –p pipecrecibe
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -6,7 +9,8 @@
 
 using namespace std;
 
-struct Registro {
+struct Registro
+{
     string nombre;
     int hora;
     int personas;
@@ -23,19 +27,23 @@ void procesarSolicitudes(const string& nombreAgente, const string& archivoSolici
     string linea;
     Registro registro;
 
-    while (getline(archivo, linea)) {
+    while (getline(archivo, linea))
+    {
         istringstream ss(linea);
         string token;
 
-        if (getline(ss, token, ',')) {
+        if (getline(ss, token, ','))
+        {
             registro.nombre = token;
         }
 
-        if (getline(ss, token, ',')) {
+        if (getline(ss, token, ','))
+        {
             registro.hora = stoi(token);
         }
 
-        if (getline(ss, token, ',')) {
+        if (getline(ss, token, ','))
+        {
             registro.personas = stoi(token);
         }
 
