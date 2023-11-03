@@ -19,7 +19,7 @@ struct comando
     string valor_p;
 };
 
-// FUNCIONES -------------------------------------------------------------------------------------------
+// FUNCIONES VERIFICACIÓN DE COMANDOS -------------------------------------------------------------------------------------------
 int EsNumero(const string &str)
 {
     try
@@ -194,8 +194,12 @@ void verificarComando(int argc, string argumentos[])
 
 int main(int argc, char *argv[])
 {
+
+    // VERIFICACIÓN DE COMANDOS
+    // Convierte los argumentos a string
     string arguments[argc];
 
+    
     for (int i = 0; i < argc; i++)
     {
         arguments[i] = argv[i]; // Convierte el elemento argv[i] a std::string
