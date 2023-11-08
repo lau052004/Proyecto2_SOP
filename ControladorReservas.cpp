@@ -1,6 +1,8 @@
 #include <iostream>
 #include <string.h>
+#include <chrono>
 #include <string>
+#include <thread>
 #include <cstdlib>
 
 using namespace std;
@@ -18,6 +20,8 @@ struct comando
     int valor_t;
     string valor_p;
 };
+
+int horaActual = 7; // Hora actual del parque
 
 // FUNCIONES VERIFICACIÓN DE COMANDOS -------------------------------------------------------------------------------------------
 int EsNumero(const string &str)
@@ -192,14 +196,19 @@ void verificarComando(int argc, string argumentos[])
     cout << "Comando p: " << comandos.comando_p << ", Valor p: " << comandos.valor_p << endl;
 }
 
+void realizarAccionesPorHora(int horasTranscurridas)
+{
+    // Realizar acciones para cada "hora" de simulación
+    // ...
+    cout << "Han transcurrido " << horasTranscurridas << " horas." << endl;
+}
+
 int main(int argc, char *argv[])
 {
 
     // VERIFICACIÓN DE COMANDOS
     // Convierte los argumentos a string
     string arguments[argc];
-
-    
     for (int i = 0; i < argc; i++)
     {
         arguments[i] = argv[i]; // Convierte el elemento argv[i] a std::string
@@ -211,6 +220,47 @@ int main(int argc, char *argv[])
     }
 
     verificarComando(argc, arguments);
+
+    // Simular el tiempo transcurrido y cada vez que transcurra una hora saca personas del parque porque se les acaba su tiempo y
+    // autoriza la entrada de las personas que reservaron para la siguiente hora.
+
+    // Recibir las solicitud de reserva de los agentes y las autoriza o rechaza
+    // dependiendo de la cantidad de gente que ya ha reservado en las horas solicitadas.
+    // En algunos casos, si es posible, coloca a las personas en un espacio de tiempo
+    // distinto al solicitado.
+
+    // Al finalizar el día, emite un reporte acerca de la ocupación del parque
+    int horasTranscurridas = 0;
+    bool seguirSimulacion = true;
+    int segundosPorHora = 6;
+
+    const std::chrono::steady_clock::time_point tiempoInicial = std::chrono::steady_clock::now();
+
+    int horasTranscurridas = 0;
+    bool seguirSimulacion = true;
+    int segundosTranscurridos = 0;
+
+    while (seguirSimulacion)
+    {
+        // Realizar acciones para cada "hora" de simulación
+        realizarAccionesPorHora(horasTranscurridas);
+
+        // Esperar durante la duración de una "hora" (10 segundos)
+        std::this_thread::sleep_for(std::chrono::seconds(segundosPorHora));
+        segundosTranscurridos += segundosPorHora;
+
+        if (segundosTranscurridos >= segundosPorHora)
+        {
+            // Ha transcurrido una "hora", reinicia el contador de segundos
+            segundosTranscurridos = 0;
+            horasTranscurridas++;
+        }
+
+        // Aquí puedes detener la simulación cuando sea necesario
+        // if (condición_para_detenerse) {
+        //     seguirSimulacion = false;
+        // }
+    }
 
     return 0;
 }
