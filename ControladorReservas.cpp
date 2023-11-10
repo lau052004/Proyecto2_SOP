@@ -6,9 +6,11 @@
 #include <string>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <thread>
+#include <sys/wait.h>
 #include <unistd.h>
+#include <pthread.h>
 #include <vector>
+#include <mutex>
 
 using namespace std;
 
@@ -30,8 +32,11 @@ struct reserva {
   int cantFamiliares;
 };
 
+
+std::mutex mtx;  // Mutex para proteger la variable compartida
 int horaActual = 7; // Hora actual del parque
 vector<reserva> reservas;
+string nombrePipe1;
 
 // FUNCIONES VERIFICACIÓN DE COMANDOS
 // -------------------------------------------------------------------------------------------
@@ -175,6 +180,106 @@ void verificarComando(int argc, string argumentos[], comando *comandos) {
        << ", Valor p: " << comandos->valor_p << endl;
 }
 
+
+// -------------------------------------------------------------- hilos
+
+void verificarReservas()
+{
+  cout << "Verificando reserva...";
+}
+
+void *incrementarHora(void *segundosHora) {
+  while(true)
+  {
+    sleep(3);  // usleep(3000000); en sistemas que no tienen sleep
+
+    // Sección crítica protegida por el mutex
+    std::lock_guard<std::mutex> lock(mtx);
+    horaActual++;
+
+    std::cout << "Hilo 1: Contador = " << horaActual << std::endl;
+
+    // Llamar a la función hacerAlgo cada vez que se incrementa el contador
+    verificarReservas();
+
+    // Verificar si el contador llega a 10
+    if (horaActual >= 20) {
+        break;  // Salir del bucle si el contador llega a 10
+    }
+  }
+  pthread_exit(NULL);
+}
+
+void *verificarContador(void *indice) {
+  int nbytes, n;
+  char mensaje[30];
+  int fd[2];
+  bool lee = false;
+
+  // Creacion del pipe
+  mode_t fifo_mode = S_IRUSR | S_IWUSR;
+  if (mkfifo(nombrePipe1.c_str(), fifo_mode) == -1) {
+    perror("mkfifo");
+    exit(1);
+  }
+
+  // Apertura del pipe.
+  if ((fd[0] = open(nombrePipe1.c_str(), O_RDONLY)) == -1) {
+    perror("open:");
+    exit(1);
+  }
+  printf("Abrio el pipe\n");
+
+  while (true) {
+    nbytes = read(fd[0], &n, sizeof(int));
+    if (nbytes == -1) {
+      perror("proceso lector:");
+      // Puedes agregar un manejo de error aquí si es necesario
+      break;
+    }
+
+    if (!lee) {
+      // Mueve la apertura del pipe fuera del bucle
+      close(fd[0]);
+      fd[0] = open(nombrePipe1.c_str(), O_RDONLY);
+      printf("Reabrio el pipe\n");
+      lee = true;
+    }
+
+    printf("Lei el numero %d\n", n);
+
+    nbytes = read(fd[0], mensaje, sizeof(mensaje));
+    if (nbytes == -1) {
+      perror("proceso lector:");
+      // Puedes agregar un manejo de error aquí si es necesario
+      break;
+    }
+
+    printf("Lei el mensaje %s\n", mensaje);
+
+    // Verificar si el contador llega a 10
+    if (horaActual >= 20) {
+      std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos." << std::endl;
+      if (unlink(nombrePipe1.c_str()) == -1) {
+        perror("unlink");
+        exit(1);
+      }
+
+      // Cerrar ambos extremos del pipe
+      close(fd[0]);
+      close(fd[1]);
+      break;
+    }
+
+    sleep(1);
+  }
+
+  pthread_exit(NULL);
+}
+
+//--------------------------------------- MAIN
+
+
 void realizarAccionesPorHora(int horaActual) {
   // Realizar acciones para cada "hora" de simulación
   // ...
@@ -183,11 +288,10 @@ void realizarAccionesPorHora(int horaActual) {
 
 int main(int argc, char *argv[]) {
   comando comandos;
-  int horaActual = 7;
   bool seguirSimulacion = true;
   int segundosTranscurridos = 0;
-  int fd[2];
   char buffer[256];
+  
 
   // VERIFICACIÓN DE COMANDOS
   // Convierte los argumentos a string
@@ -202,82 +306,36 @@ int main(int argc, char *argv[]) {
 
   verificarComando(argc, arguments, &comandos);
 
-  // Abrir Pipe de comunicación donde lee
-  int nbytes, n, pid;
-  char mensaje[30];
+  // ---------------------- INICIANDO EL PROGRAMA
+  nombrePipe1 = comandos.valor_p;
+  pthread_t threads[2];
 
 
-  // Creacion del pipe
-  mode_t fifo_mode = S_IRUSR | S_IWUSR;
-
-  if (mkfifo(comandos.valor_p.c_str(), fifo_mode) == -1) {
-     perror("mkfifo");
-     exit(1);
+  if (pthread_create(&threads[0], NULL, incrementarHora, reinterpret_cast<void*>(comandos.valor_s)) != 0) {
+      std::cerr << "Error al crear el hilo 1." << std::endl;
+      return 1;
   }
 
-  // Apertura del pipe. 
-  if ((fd[0] = open (comandos.valor_p.c_str(), O_RDONLY)) == -1) {
-    perror("open:");
-    exit(1);
-  }  
-  printf ("Abrio el pipe\n");
-
-  nbytes = read(fd[0], &n, sizeof(int));
-  if (nbytes == -1) {
-     perror("proceso lector:");
-     exit(1);
+  if (pthread_create(&threads[1], NULL, verificarContador, NULL) != 0) {
+      std::cerr << "Error al crear el hilo 2." << std::endl;
+      return 1;
   }
-  printf ("Lei el numero %d\n", n);
-  nbytes = read (fd[0], mensaje, sizeof(mensaje));
-  if (nbytes == -1) {
-     perror("proceso lector:");
-     exit(1);
+
+  // Esperar a que ambos hilos terminen
+  
+  void *returnValue;
+  
+  if (pthread_join(threads[0], &returnValue) != 0) {
+      fprintf(stderr, "Error al unirse al hilo 1.\n");
+      return 1;
   }
   
-  printf ("Lei el mensaje %s\n", mensaje);
-  close(fd[0]);
-  
-  if (unlink(comandos.valor_p.c_str()) == -1){
-    perror("unlink");
-    exit(1);
-  }  
-
-  // Abrir Pipe donde escribe y manda la hora
-
-  // EMPIEZA LA SIMULACIÓN
-  // Simular el tiempo transcurrido y cada vez que transcurra una hora saca
-  // personas del parque porque se les acaba su tiempo y autoriza la entrada de
-  // las personas que reservaron para la siguiente hora.
-
-  while (seguirSimulacion) {
-    // Realizar acciones para cada "hora" de simulación
-    realizarAccionesPorHora(horaActual);
-
-    // Esperar durante la duración de una "hora" (10 segundos)
-    std::this_thread::sleep_for(std::chrono::seconds(comandos.valor_s));
-    segundosTranscurridos += comandos.valor_s;
-
-    if (segundosTranscurridos >= comandos.valor_s) {
-      // Ha transcurrido una "hora", reinicia el contador de segundos
-      segundosTranscurridos = 0;
-      horaActual++;
-    }
-
-    if (horaActual > 19) {
-      seguirSimulacion = false;
-    }
+  if (pthread_join(threads[1], &returnValue) != 0) {
+      fprintf(stderr, "Error al unirse al hilo 2.\n");
+      return 1;
   }
 
-  // Recibir las solicitud de reserva de los agentes y las autoriza o rechaza
-  // dependiendo de la cantidad de gente que ya ha reservado en las horas
-  // solicitadas. En algunos casos, si es posible, coloca a las personas en un
-  // espacio de tiempo distinto al solicitado.
-
-  // Al finalizar el día, emite un reporte acerca de la ocupación del parque
-
-  // Cerrar los pipes
-  close(fd[0]);
-  close(fd[1]);
+  std::cout << "Programa terminado." << std::endl;
 
   return 0;
 }

@@ -3,7 +3,7 @@
 // –p pipecrecibe
 // $./agente –s nombre –a archivosolicitudes –p pipecrecibe
 // ./controlador –i 2 -f 3 -s 5 -t 7 -p pipecrecibe
-// $./agente –s hola –a archivo –p pipecrecibe
+// $./AgentesReservas -s hola -a archivo -p pipecrecibe
 
 #include <fcntl.h>
 #include <fstream>
@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
 
   // Crear pipe de escritura
   int fd[2], pid, n, creado = 0;
-  char mensaje[30] = "Hola soy nom1";
+  char mensaje[30] = "Hola soy nom2";
 
   n = getpid();
   // Este trozo de codigo contiene un sleep porque se está tratando de abrir un
