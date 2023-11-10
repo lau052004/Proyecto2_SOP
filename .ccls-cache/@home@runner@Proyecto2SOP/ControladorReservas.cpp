@@ -185,7 +185,7 @@ void verificarComando(int argc, string argumentos[], comando *comandos) {
 
 void verificarReservas()
 {
-  cout << "Verificando reserva...";
+  cout << "Verificando reserva..." << endl;
 }
 
 void *incrementarHora(void *segundosHora) {
@@ -226,56 +226,59 @@ void *verificarContador(void *indice) {
   // Apertura del pipe.
   if ((fd[0] = open(nombrePipe1.c_str(), O_RDONLY)) == -1) {
     perror("open:");
+    // Puedes agregar un manejo de error aquí si es necesario
     exit(1);
   }
-  printf("Abrio el pipe\n");
 
   while (true) {
+    //std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
+
     nbytes = read(fd[0], &n, sizeof(int));
+
     if (nbytes == -1) {
       perror("proceso lector:");
       // Puedes agregar un manejo de error aquí si es necesario
-      break;
     }
-
-    if (!lee) {
-      // Mueve la apertura del pipe fuera del bucle
-      close(fd[0]);
-      fd[0] = open(nombrePipe1.c_str(), O_RDONLY);
+    else if (nbytes == 0) {
+      // Verificar si el contador llega a 20
+          if (horaActual >= 20) {
+            std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos." << std::endl;
+            break;
+          }
+      // ./controlador -i 2 -f 3 -s 5 -t 7 -p pipecrecibe
+          sleep(1);
+    }
+    else{
       printf("Reabrio el pipe\n");
-      lee = true;
-    }
 
-    printf("Lei el numero %d\n", n);
+        printf("Lei el numero %d\n", n);
 
-    nbytes = read(fd[0], mensaje, sizeof(mensaje));
-    if (nbytes == -1) {
-      perror("proceso lector:");
-      // Puedes agregar un manejo de error aquí si es necesario
-      break;
-    }
+        nbytes = read(fd[0], mensaje, sizeof(mensaje));
+        if (nbytes == -1) {
+          perror("proceso lector:");
+          // Puedes agregar un manejo de error aquí si es necesario
+          break;
+        }
 
-    printf("Lei el mensaje %s\n", mensaje);
+        printf("Lei el mensaje %s\n", mensaje);
 
-    // Verificar si el contador llega a 10
-    if (horaActual >= 20) {
-      std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos." << std::endl;
-      if (unlink(nombrePipe1.c_str()) == -1) {
-        perror("unlink");
-        exit(1);
+        if (horaActual >= 20) {
+          std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos." << std::endl;
+          break;
+        }
+        lee = false;
+        continue;
       }
-
-      // Cerrar ambos extremos del pipe
-      close(fd[0]);
-      close(fd[1]);
-      break;
     }
 
-    sleep(1);
-  }
+  // Cerrar el pipe después de salir del bucle
+  close(fd[0]);
 
   pthread_exit(NULL);
 }
+
+
+
 
 //--------------------------------------- MAIN
 

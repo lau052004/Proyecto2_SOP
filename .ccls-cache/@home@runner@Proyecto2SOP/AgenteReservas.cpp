@@ -3,7 +3,7 @@
 // –p pipecrecibe
 // $./agente –s nombre –a archivosolicitudes –p pipecrecibe
 // ./controlador –i 2 -f 3 -s 5 -t 7 -p pipecrecibe
-// $./AgentesReservas -s hola -a archivo -p pipecrecibe
+// $./AgenteReservas -s hola -a archivo -p pipecrecibe
 
 #include <fcntl.h>
 #include <fstream>
@@ -119,6 +119,18 @@ int main(int argc, char *argv[]) {
   // hace.
   write(fd[1], mensaje, strlen(mensaje) + 1);
   printf("Escribi el mensaje %s\n", mensaje);
+
+  sleep(3);
+
+  char mensaje2[30] = "Hola soy nom55";
+
+  write(fd[1], &n, sizeof(int));
+  printf("Escribi el numero %d\n", n);
+  // El 1 es para incluir el caracter NULL (fin de string) porque strlen no lo
+  // hace.
+  write(fd[1], mensaje2, strlen(mensaje2) + 1);
+  printf("Escribi el mensaje %s\n", mensaje2);
+  
   close(fd[1]);
   printf("Se cierra el pipe para escritura\n");
 
