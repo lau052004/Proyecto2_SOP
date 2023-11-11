@@ -63,6 +63,52 @@ void procesarSolicitudes(const string &nombreAgente,
   archivo.close();
 }
 
+void primeraConexion(string nombreAgente){
+  // procesarSolicitudes(nombreAgente, archivoSolicitudes, pipeCrecibe);
+
+  // Crear pipe de escritura
+  int fd[2], pid, n, creado = 0;
+
+  const char *nombreAgenteChar = nombreAgente.c_str(); // line 62 in AgenteReservas.cpp
+
+  n = getpid();
+  // Este trozo de codigo contiene un sleep porque se está tratando de abrir un
+  // pipe que crea otro proceso, así da tiempo de que nom2 lo cree si no lo ha
+  // creado.
+
+  string pipenom = "pipecrecibe";
+
+  do {
+    fd[1] = open(pipenom.c_str(), O_WRONLY);
+    if (fd[1] == -1) {
+      perror("pipe");
+      printf(" Se volvera a intentar despues\n");
+      sleep(5);
+    } else
+      creado = 1;
+  } while (creado == 0);
+
+  printf("Abrio el pipe, descriptor %d\n", fd[1]);
+  // las llamadas al sistema write, deben validarse, también pueden devolver
+  // error
+  // El 1 es para incluir el caracter NULL (fin de string) porque strlen no lo
+  // hace.
+  write(fd[1], nombreAgenteChar, strlen(nombreAgenteChar) + 1);
+  printf("Nombre del agente: %s\n", nombreAgenteChar);
+
+  sleep(3);
+
+  char pipe2[30] = "pipe2";
+
+  // El 1 es para incluir el caracter NULL (fin de string) porque strlen no lo
+  // hace.
+  write(fd[1], pipe2, strlen(pipe2) + 1);
+  printf("Nombre del pipe: %s\n", pipe2);
+
+  close(fd[1]);
+  printf("Se cierra el pipe para escritura\n");
+}
+
 int main(int argc, char *argv[]) {
   if (argc != 7) {
     cerr << "Uso incorrecto. Debe proporcionar los argumentos correctamente."
@@ -87,52 +133,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // procesarSolicitudes(nombreAgente, archivoSolicitudes, pipeCrecibe);
-
-  // Crear pipe de escritura
-  int fd[2], pid, n, creado = 0;
-  char mensaje[30] = "Hola soy nom2";
-
-  n = getpid();
-  // Este trozo de codigo contiene un sleep porque se está tratando de abrir un
-  // pipe que crea otro proceso, así da tiempo de que nom2 lo cree si no lo ha
-  // creado.
-
-  string pipenom = "pipecrecibe";
-
-  do {
-    fd[1] = open(pipenom.c_str(), O_WRONLY);
-    if (fd[1] == -1) {
-      perror("pipe");
-      printf(" Se volvera a intentar despues\n");
-      sleep(5);
-    } else
-      creado = 1;
-  } while (creado == 0);
-
-  printf("Abrio el pipe, descriptor %d\n", fd[1]);
-  // las llamadas al sistema write, deben validarse, también pueden devolver
-  // error
-  write(fd[1], &n, sizeof(int));
-  printf("Escribi el numero %d\n", n);
-  // El 1 es para incluir el caracter NULL (fin de string) porque strlen no lo
-  // hace.
-  write(fd[1], mensaje, strlen(mensaje) + 1);
-  printf("Escribi el mensaje %s\n", mensaje);
-
-  sleep(3);
-
-  char mensaje2[30] = "Hola soy nom55";
-
-  write(fd[1], &n, sizeof(int));
-  printf("Escribi el numero %d\n", n);
-  // El 1 es para incluir el caracter NULL (fin de string) porque strlen no lo
-  // hace.
-  write(fd[1], mensaje2, strlen(mensaje2) + 1);
-  printf("Escribi el mensaje %s\n", mensaje2);
-  
-  close(fd[1]);
-  printf("Se cierra el pipe para escritura\n");
+  primeraConexion(nombreAgente);
 
   return 0;
 }

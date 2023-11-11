@@ -30,8 +30,8 @@ struct comando {
 struct reserva {
   string nomFamilia;
   int cantFamiliares;
+  int horaInicio;
 };
-
 
 std::mutex mtx;  // Mutex para proteger la variable compartida
 int horaActual = 7; // Hora actual del parque
@@ -233,7 +233,7 @@ void *verificarContador(void *indice) {
   while (true) {
     //std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
 
-    nbytes = read(fd[0], &n, sizeof(int));
+    nbytes = read(fd[0], mensaje, sizeof(mensaje));
 
     if (nbytes == -1) {
       perror("proceso lector:");
@@ -251,7 +251,7 @@ void *verificarContador(void *indice) {
     else{
       printf("Reabrio el pipe\n");
 
-        printf("Lei el numero %d\n", n);
+        printf("Nombre agente: %s\n", mensaje);
 
         nbytes = read(fd[0], mensaje, sizeof(mensaje));
         if (nbytes == -1) {
@@ -260,7 +260,7 @@ void *verificarContador(void *indice) {
           break;
         }
 
-        printf("Lei el mensaje %s\n", mensaje);
+        printf("Nombre del pipe %s\n", mensaje);
 
         if (horaActual >= 20) {
           std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos." << std::endl;
@@ -277,11 +277,7 @@ void *verificarContador(void *indice) {
   pthread_exit(NULL);
 }
 
-
-
-
 //--------------------------------------- MAIN
-
 
 void realizarAccionesPorHora(int horaActual) {
   // Realizar acciones para cada "hora" de simulación
