@@ -11,6 +11,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
+#include <cstring>
+#include <sstream>
+#include "estructuras.h"
 
 using namespace std;
 
@@ -27,19 +30,23 @@ struct comando {
   string valor_p;
 };
 
-struct reserva {
+/*struct reserva {
+  string Agente;
   string nomFamilia;
   int cantFamiliares;
   int horaInicio;
-};
+};*/
 
 std::mutex mtx; // Mutex para proteger la variable compartida
 int horaActual; // Hora actual del parque
 int segundosHora;
 int horaFinal;
 int totalPersonas;
+int cantPibes=0;
 vector<reserva> reservas;
 string nombrePipe1;
+vector <string> nombrePipesReserva;
+
 
 // FUNCIONES VERIFICACIÓN DE COMANDOS
 // -------------------------------------------------------------------------------------------
@@ -219,13 +226,66 @@ void verificarComando(int argc, string argumentos[], comando *comandos) {
        << ", Valor p: " << comandos->valor_p << endl;
 }
 
-// -------------------------------------------------------------- hilos
+// -------------------------------------------------------------- HILOS
 
-void verificarReservas() { cout << "Verificando reserva..." << endl; }
+void verificarReservas(char reservacion[100]) 
+{
+  string reservaStr(reservacion);
+  istringstream ss(reservaStr);
+  string token;
+  struct reserva reservas;
+
+  // Obtener cada token y asignarlo a la estructura
+  if (getline(ss, token, ',')) {
+      reservas.Agente = token;
+  }
+
+  if (getline(ss, token, ',')) {
+      reservas.nomFamilia = token;
+  }
+
+  if (getline(ss, token, ',')) {
+      reservas.cantFamiliares = stoi(token);
+  }
+
+  if (getline(ss, token, ',')) {
+      reservas.horaInicio = stoi(token);
+  }
+  
+  
+  cout << "Verificando reserva..." << endl; 
+  cout << "Agente: " << reservas.Agente <<endl; 
+  cout << "nombreFamilia: " << reservas.nomFamilia <<endl; 
+  cout << "cant: " << reservas.cantFamiliares <<endl; 
+  cout << "hora: " << reservas.horaInicio << endl; 
+}
+
+void enviarHora(char* nombrePipe) {
+  int fd, bytesEscritos;
+
+  fd = open(nombrePipe, O_WRONLY);
+  if (fd == -1) {
+    perror("proceso escritor:");
+  }
+
+  printf("Abrio el pipe de escritura %d\n", fd);
+
+  // Escribir hora en el pipe
+  bytesEscritos = write(fd, &horaActual, sizeof(int));
+  
+  if (bytesEscritos == -1) {
+    perror("write");
+    std::cerr << "Error al escribir en el pipe" << std::endl;
+    // Aquí puedes manejar el error según tus necesidades
+    exit(1);
+  } else {
+    std::cout << "Hora enviada: " << horaActual << std::endl;
+  }
+}
 
 void *incrementarHora(void *indice) {
   while (true) {
-    sleep(3); // usleep(3000000); en sistemas que no tienen sleep
+    sleep(segundosHora); // usleep(3000000); en sistemas que no tienen sleep
 
     // Sección crítica protegida por el mutex
     std::lock_guard<std::mutex> lock(mtx);
@@ -234,7 +294,7 @@ void *incrementarHora(void *indice) {
     std::cout << "Hilo 1: Hora Actual = " << horaActual << std::endl;
 
     // Llamar a la función hacerAlgo cada vez que se incrementa el contador
-    verificarReservas();
+    //verificarReservas();
 
     // Verificar si el contador llega a 10
     if (horaActual >= 19 || horaActual >= horaFinal) {
@@ -245,9 +305,11 @@ void *incrementarHora(void *indice) {
 }
 
 void *verificarContador(void *indice) {
-  int nbytes, n;
+  int nbytes;
+  char n;
   char mensaje[30];
   int fd;
+  char reserva[100];
 
   // Creacion del pipe
   mode_t fifo_mode = S_IRUSR | S_IWUSR;
@@ -257,7 +319,7 @@ void *verificarContador(void *indice) {
   }
 
   // Apertura del pipe.
-  if ((fd = open(nombrePipe1.c_str(), O_RDONLY | O_NONBLOCK)) == -1) {
+  if ((fd = open(nombrePipe1.c_str(), O_RDONLY /*| O_NONBLOCK*/)) == -1) {
     perror("open:");
     // Puedes agregar un manejo de error aquí si es necesario
     exit(1);
@@ -267,7 +329,7 @@ void *verificarContador(void *indice) {
     {
       //Sección crítica protegida por el mutex
       std::lock_guard<std::mutex> lock(mtx);
-      std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
+      //std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
     }
 
     if (horaActual >= 19 || horaActual >= horaFinal) {
@@ -276,10 +338,11 @@ void *verificarContador(void *indice) {
       break;
     }
 
-    nbytes = read(fd, mensaje, sizeof(mensaje));
+    sleep(1);
+    nbytes = read(fd, &n, sizeof(char));
 
     if (nbytes == -1) {
-      perror("proceso lector:");
+      perror("proceso lector id 1:");
       // Puedes agregar un manejo de error aquí si es necesario
     } else if (nbytes == 0) {
       // Verificar si el contador llega a 20
@@ -293,29 +356,54 @@ void *verificarContador(void *indice) {
       }
       // ./controlador -i 2 -f 3 -s 5 -t 7 -p pipecrecibe
       sleep(1);
+      continue;
     } else {
       printf("Reabrio el pipe\n");
+      cout << "identificador: " << n << endl;
 
-      printf("Nombre agente: %s\n", mensaje);
-
-      nbytes = read(fd, mensaje, sizeof(mensaje));
-      if (nbytes == -1) {
-        perror("proceso lector:");
-        // Puedes agregar un manejo de error aquí si es necesario
-        break;
-      }
-
-      printf("Nombre del pipe %s\n", mensaje);
-
+      if(n=='1')
       {
+        nbytes = read(fd, &mensaje, sizeof(char[30]));
+        if (nbytes == -1) {
+          perror("proceso lector id 2:");
+          // Puedes agregar un manejo de error aquí si es necesario
+        } 
+        else
+        {
+          // se lee nombre del agente
+          printf("Nombre agente: %s\n", mensaje);
+          enviarHora(mensaje);
+          sleep(3);
+          continue;
+        }
+      }
+      else if(n=='2')
+      {
+        // se lee estructura de la reserva
+        nbytes = read(fd, &reserva, sizeof(reserva));
+
+        if (nbytes == -1) {
+          perror("proceso lector id 3:");
+          // Puedes agregar un manejo de error aquí si es necesario
+        } 
+        else
+        {
+          verificarReservas(reserva);
+          continue;
+        }
+      }
+      else {
+        std::lock_guard<std::mutex> lock(mtx);
         if (horaActual >= 19 || horaActual >= horaFinal) {
           std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos."
                     << std::endl;
           break;
         }
+        continue;
       }
-      continue;
     }
+    sleep(1);
+    continue;
   }
 
   // Cerrar el pipe después de salir del bucle
@@ -326,11 +414,7 @@ void *verificarContador(void *indice) {
 
 //--------------------------------------- MAIN
 
-void realizarAccionesPorHora(int horaActual) {
-  // Realizar acciones para cada "hora" de simulación
-  // ...
-  cout << "Han transcurrido " << horaActual << " horas." << endl;
-}
+
 
 int main(int argc, char *argv[]) {
   comando comandos;
