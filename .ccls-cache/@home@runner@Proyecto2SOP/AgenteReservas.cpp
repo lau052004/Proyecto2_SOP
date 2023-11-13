@@ -4,7 +4,6 @@
 // $./agente –s nombre –a archivosolicitudes –p pipecrecibe
 // ./controlador –i 2 -f 3 -s 5 -t 7 -p pipecrecibe
 // $./AgenteReservas -s hola -a archivo -p pipecrecibe
-
 #include <fcntl.h>
 #include <fstream>
 #include <iostream>
@@ -23,11 +22,10 @@ struct Registro {
 };
 
 // Duración en segundos de una "hora"
-const int segundosPorHora = 3600;
+int segundosPorHora;
+char pipeNuevo[30] = "pipe2";
 
-void procesarSolicitudes(const string &nombreAgente,
-                         const string &archivoSolicitudes,
-                         const string &pipeCrecibe) {
+void procesarSolicitudes(string nombreAgente, string archivoSolicitudes) {
   ifstream archivo(archivoSolicitudes);
 
   if (!archivo.is_open()) {
@@ -63,13 +61,12 @@ void procesarSolicitudes(const string &nombreAgente,
   archivo.close();
 }
 
-void primeraConexion(string nombreAgente){
+void primeraConexion(string nombreAgente) {
   // procesarSolicitudes(nombreAgente, archivoSolicitudes, pipeCrecibe);
-
   // Crear pipe de escritura
   int fd[2], pid, n, creado = 0;
-
-  const char *nombreAgenteChar = nombreAgente.c_str(); // line 62 in AgenteReservas.cpp
+  const char *nombreAgenteChar =
+      nombreAgente.c_str(); // line 62 in AgenteReservas.cpp
 
   n = getpid();
   // Este trozo de codigo contiene un sleep porque se está tratando de abrir un
@@ -93,17 +90,27 @@ void primeraConexion(string nombreAgente){
   // error
   // El 1 es para incluir el caracter NULL (fin de string) porque strlen no lo
   // hace.
-  write(fd[1], nombreAgenteChar, strlen(nombreAgenteChar) + 1);
-  printf("Nombre del agente: %s\n", nombreAgenteChar);
-
-  sleep(3);
-
-  char pipe2[30] = "pipe2";
+  ssize_t bytesEscritos =
+      write(fd[1], nombreAgenteChar, strlen(nombreAgenteChar) + 1);
+  if (bytesEscritos == -1) {
+    perror("write");
+    std::cerr << "Error al escribir en el pipe" << std::endl;
+    // Aquí puedes manejar el error según tus necesidades
+  } else {
+    std::cout << "Nombre del agente: " << nombreAgenteChar << std::endl;
+  }
 
   // El 1 es para incluir el caracter NULL (fin de string) porque strlen no lo
   // hace.
-  write(fd[1], pipe2, strlen(pipe2) + 1);
-  printf("Nombre del pipe: %s\n", pipe2);
+  // Llamada al sistema write, debe validarse y también puede devolver error
+  bytesEscritos = write(fd[1], pipeNuevo, strlen(pipeNuevo) + 1);
+  if (bytesEscritos == -1) {
+    perror("write");
+    std::cerr << "Error al escribir en el pipe" << std::endl;
+    // Aquí puedes manejar el error según tus necesidades
+  } else {
+    std::cout << "Nombre del pipe: " << pipeNuevo << std::endl;
+  }
 
   close(fd[1]);
   printf("Se cierra el pipe para escritura\n");
@@ -134,6 +141,8 @@ int main(int argc, char *argv[]) {
   }
 
   primeraConexion(nombreAgente);
+
+  procesarSolicitudes(nombreAgente, archivoSolicitudes);
 
   return 0;
 }

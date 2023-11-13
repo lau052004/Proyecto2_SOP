@@ -2,15 +2,15 @@
 #include <cstdlib>
 #include <fcntl.h>
 #include <iostream>
+#include <mutex>
+#include <pthread.h>
 #include <string.h>
 #include <string>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <pthread.h>
 #include <vector>
-#include <mutex>
 
 using namespace std;
 
@@ -33,8 +33,11 @@ struct reserva {
   int horaInicio;
 };
 
-std::mutex mtx;  // Mutex para proteger la variable compartida
-int horaActual = 7; // Hora actual del parque
+std::mutex mtx; // Mutex para proteger la variable compartida
+int horaActual; // Hora actual del parque
+int segundosHora;
+int horaFinal;
+int totalPersonas;
 vector<reserva> reservas;
 string nombrePipe1;
 
@@ -92,6 +95,7 @@ bool ContadorComando(int argc, string argumentos[], int comando) {
 bool ValoresCorrectos(int argc, string argumentos[],
                       comando *comandoIngresado) {
   int num;
+  bool inicial = false, final = false;
   // Itera sobre los argumentos (saltando de 2 en 2) para verificar los valores
   // asociados a los comandos.
   for (int i = 1; i < argc; i = i + 2) {
@@ -100,16 +104,51 @@ bool ValoresCorrectos(int argc, string argumentos[],
       if (num != 1) { // Retorna false si el valor no es un número válido.
         return false;
       } else {
-        comandoIngresado->valor_i =
-            stoi(argumentos[i + 1]); // Almacena el valor convertido a entero.
+        if (stoi(argumentos[i + 1]) >= 7 && stoi(argumentos[i + 1]) < 19) {
+          if (final == true) {
+            if (stoi(argumentos[i + 1]) < comandoIngresado->valor_f) {
+              comandoIngresado->valor_i = stoi(
+                  argumentos[i + 1]); // Almacena el valor convertido a entero.
+            } else {
+              cout << "La hora inicial debe ser menor a la final" << endl;
+              return false;
+            }
+          } else {
+            inicial = true;
+            comandoIngresado->valor_i = stoi(
+                argumentos[i + 1]); // Almacena el valor convertido a entero.
+          }
+        } else {
+          cout << "La hora incial no corresponde al horario del parque."
+               << endl;
+          return false;
+        }
       }
+
       // Verifica si el valor asociado al comando_n es un número válido.
     } else if (argumentos[i] == comandoIngresado->comando_f) {
       num = EsNumero(argumentos[i + 1]);
       if (num != 1) {
         return false;
       } else {
-        comandoIngresado->valor_f = stoi(argumentos[i + 1]);
+        if (stoi(argumentos[i + 1]) > 7 && stoi(argumentos[i + 1]) <= 19) {
+          if (inicial == true) {
+            if (stoi(argumentos[i + 1]) > comandoIngresado->valor_i) {
+              comandoIngresado->valor_f = stoi(
+                  argumentos[i + 1]); // Almacena el valor convertido a entero.
+            } else {
+              cout << "La hora final debe ser mayor a la inicial" << endl;
+              return false;
+            }
+          } else {
+            final = true;
+            comandoIngresado->valor_f = stoi(
+                argumentos[i + 1]); // Almacena el valor convertido a entero.
+          }
+        } else {
+          cout << "La hora final no corresponde al horario del parque." << endl;
+          return false;
+        }
       }
     } else if (argumentos[i] == comandoIngresado->comando_s) {
       num = EsNumero(argumentos[i + 1]);
@@ -180,31 +219,26 @@ void verificarComando(int argc, string argumentos[], comando *comandos) {
        << ", Valor p: " << comandos->valor_p << endl;
 }
 
-
 // -------------------------------------------------------------- hilos
 
-void verificarReservas()
-{
-  cout << "Verificando reserva..." << endl;
-}
+void verificarReservas() { cout << "Verificando reserva..." << endl; }
 
-void *incrementarHora(void *segundosHora) {
-  while(true)
-  {
-    sleep(3);  // usleep(3000000); en sistemas que no tienen sleep
+void *incrementarHora(void *indice) {
+  while (true) {
+    sleep(3); // usleep(3000000); en sistemas que no tienen sleep
 
     // Sección crítica protegida por el mutex
     std::lock_guard<std::mutex> lock(mtx);
     horaActual++;
 
-    std::cout << "Hilo 1: Contador = " << horaActual << std::endl;
+    std::cout << "Hilo 1: Hora Actual = " << horaActual << std::endl;
 
     // Llamar a la función hacerAlgo cada vez que se incrementa el contador
     verificarReservas();
 
     // Verificar si el contador llega a 10
-    if (horaActual >= 20) {
-        break;  // Salir del bucle si el contador llega a 10
+    if (horaActual >= 19 || horaActual >= horaFinal) {
+      break; // Salir del bucle si el contador llega a 10
     }
   }
   pthread_exit(NULL);
@@ -213,8 +247,7 @@ void *incrementarHora(void *segundosHora) {
 void *verificarContador(void *indice) {
   int nbytes, n;
   char mensaje[30];
-  int fd[2];
-  bool lee = false;
+  int fd;
 
   // Creacion del pipe
   mode_t fifo_mode = S_IRUSR | S_IWUSR;
@@ -224,55 +257,69 @@ void *verificarContador(void *indice) {
   }
 
   // Apertura del pipe.
-  if ((fd[0] = open(nombrePipe1.c_str(), O_RDONLY)) == -1) {
+  if ((fd = open(nombrePipe1.c_str(), O_RDONLY | O_NONBLOCK)) == -1) {
     perror("open:");
     // Puedes agregar un manejo de error aquí si es necesario
     exit(1);
   }
 
   while (true) {
-    //std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
+    {
+      //Sección crítica protegida por el mutex
+      std::lock_guard<std::mutex> lock(mtx);
+      std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
+    }
 
-    nbytes = read(fd[0], mensaje, sizeof(mensaje));
+    if (horaActual >= 19 || horaActual >= horaFinal) {
+      std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos."
+                << std::endl;
+      break;
+    }
+
+    nbytes = read(fd, mensaje, sizeof(mensaje));
 
     if (nbytes == -1) {
       perror("proceso lector:");
       // Puedes agregar un manejo de error aquí si es necesario
-    }
-    else if (nbytes == 0) {
+    } else if (nbytes == 0) {
       // Verificar si el contador llega a 20
-          if (horaActual >= 20) {
-            std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos." << std::endl;
-            break;
-          }
+      {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (horaActual >= 19 || horaActual >= horaFinal) {
+          std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos."
+                    << std::endl;
+          break;
+        }
+      }
       // ./controlador -i 2 -f 3 -s 5 -t 7 -p pipecrecibe
-          sleep(1);
-    }
-    else{
+      sleep(1);
+    } else {
       printf("Reabrio el pipe\n");
 
-        printf("Nombre agente: %s\n", mensaje);
+      printf("Nombre agente: %s\n", mensaje);
 
-        nbytes = read(fd[0], mensaje, sizeof(mensaje));
-        if (nbytes == -1) {
-          perror("proceso lector:");
-          // Puedes agregar un manejo de error aquí si es necesario
-          break;
-        }
-
-        printf("Nombre del pipe %s\n", mensaje);
-
-        if (horaActual >= 20) {
-          std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos." << std::endl;
-          break;
-        }
-        lee = false;
-        continue;
+      nbytes = read(fd, mensaje, sizeof(mensaje));
+      if (nbytes == -1) {
+        perror("proceso lector:");
+        // Puedes agregar un manejo de error aquí si es necesario
+        break;
       }
+
+      printf("Nombre del pipe %s\n", mensaje);
+
+      {
+        if (horaActual >= 19 || horaActual >= horaFinal) {
+          std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos."
+                    << std::endl;
+          break;
+        }
+      }
+      continue;
     }
+  }
 
   // Cerrar el pipe después de salir del bucle
-  close(fd[0]);
+  close(fd);
 
   pthread_exit(NULL);
 }
@@ -287,10 +334,6 @@ void realizarAccionesPorHora(int horaActual) {
 
 int main(int argc, char *argv[]) {
   comando comandos;
-  bool seguirSimulacion = true;
-  int segundosTranscurridos = 0;
-  char buffer[256];
-  
 
   // VERIFICACIÓN DE COMANDOS
   // Convierte los argumentos a string
@@ -305,33 +348,36 @@ int main(int argc, char *argv[]) {
 
   verificarComando(argc, arguments, &comandos);
 
+  horaActual = comandos.valor_i;
+  segundosHora = comandos.valor_s;
+  horaFinal = comandos.valor_f;
+  totalPersonas = comandos.valor_t;
+
   // ---------------------- INICIANDO EL PROGRAMA
   nombrePipe1 = comandos.valor_p;
   pthread_t threads[2];
 
-
-  if (pthread_create(&threads[0], NULL, incrementarHora, reinterpret_cast<void*>(comandos.valor_s)) != 0) {
-      std::cerr << "Error al crear el hilo 1." << std::endl;
-      return 1;
+  if (pthread_create(&threads[0], NULL, incrementarHora, NULL) != 0) {
+    std::cerr << "Error al crear el hilo 1." << std::endl;
+    return 1;
   }
 
   if (pthread_create(&threads[1], NULL, verificarContador, NULL) != 0) {
-      std::cerr << "Error al crear el hilo 2." << std::endl;
-      return 1;
+    std::cerr << "Error al crear el hilo 2." << std::endl;
+    return 1;
   }
 
   // Esperar a que ambos hilos terminen
-  
   void *returnValue;
-  
+
   if (pthread_join(threads[0], &returnValue) != 0) {
-      fprintf(stderr, "Error al unirse al hilo 1.\n");
-      return 1;
+    fprintf(stderr, "Error al unirse al hilo 1.\n");
+    return 1;
   }
-  
+
   if (pthread_join(threads[1], &returnValue) != 0) {
-      fprintf(stderr, "Error al unirse al hilo 2.\n");
-      return 1;
+    fprintf(stderr, "Error al unirse al hilo 2.\n");
+    return 1;
   }
 
   std::cout << "Programa terminado." << std::endl;
@@ -339,4 +385,4 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-// probando
+// probando

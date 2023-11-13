@@ -1,0 +1,4 @@
+g++ -o controlador ControladorReservas.cpp
+g++ -o AgenteReservas AgenteReservas.cpp
+./controlador -i 2 -f 3 -s 5 -t 7 -p pipecrecibe
+./AgenteReservas -s hola -a archivo -p pipecrecibe
