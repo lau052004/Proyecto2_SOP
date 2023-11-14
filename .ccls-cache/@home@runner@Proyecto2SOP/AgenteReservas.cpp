@@ -58,7 +58,7 @@ void signalHandler (int signum) {
     } else {
       std::cout << "Identificador: " << identificador_emisor2 << std::endl;
     }
-    
+
     // Se manda la estructura
     bytesEscritos =  write(fd1, &r, sizeof(r));
     //bytesEscritos = write(fd[1], &reservaChar, sizeof(reservaChar));
@@ -254,13 +254,17 @@ void primeraConexion(string nombreAgente) {
   } else {
     std::cout << "Mandando estructura " << std::endl;
   }
-  
+
   sleep(3);
 
   pause();
 
   sleep(3);
-    
+
+  pause();
+
+  sleep(3);
+
   // El 1 es para incluir el caracter NULL (fin de string) porque strlen no lo
   // hace.
   // Llamada al sistema write, debe validarse y también puede devolver error

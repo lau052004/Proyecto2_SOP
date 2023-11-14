@@ -408,8 +408,14 @@ void *verificarContador(void *indice) {
                             agentes.erase(agentes.begin() + i);
                             cantAgentes--;
                             cout << "cant agentes" << cantAgentes << endl;
-                            posAgenteActual--;
-
+                            if(i!=0)
+                            {
+                              posAgenteActual=i-1;
+                            }
+                            else{
+                              posAgenteActual=i;
+                            }
+                          
                             cout << "pos agentes" << posAgenteActual << endl;
                             // Ajustar posAgenteActual si es necesario
                             if (posAgenteActual >= cantAgentes) {
@@ -454,9 +460,9 @@ int main(int argc, char *argv[]) {
     arguments[i] = argv[i]; // Convierte el elemento argv[i] a std::string
   }
 
-  for (int i = 0; i < argc; i++) {
+  /*for (int i = 0; i < argc; i++) {
     cout << "Argumento " << i << ": " << arguments[i] << std::endl;
-  }
+  }*/
 
   verificarComando(argc, arguments, &comandos);
 
