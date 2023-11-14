@@ -42,10 +42,12 @@ int horaActual; // Hora actual del parque
 int segundosHora;
 int horaFinal;
 int totalPersonas;
-int cantPibes=0;
+int cantAgentes=0;
+int posAgenteActual=0;
 vector<reserva> reservas;
 string nombrePipe1;
 vector <string> nombrePipesReserva;
+vector <agenteInfo> agentes;
 
 
 // FUNCIONES VERIFICACIÓN DE COMANDOS
@@ -214,7 +216,7 @@ void verificarComando(int argc, string argumentos[], comando *comandos) {
   }
 
   // Imprimir la estructura
-  cout << "Comando i: " << comandos->comando_i
+  /*cout << "Comando i: " << comandos->comando_i
        << ", Valor i: " << comandos->valor_i << endl;
   cout << "Comando f: " << comandos->comando_f
        << ", Valor f: " << comandos->valor_f << endl;
@@ -223,41 +225,18 @@ void verificarComando(int argc, string argumentos[], comando *comandos) {
   cout << "Comando t: " << comandos->comando_t
        << ", Valor t: " << comandos->valor_t << endl;
   cout << "Comando p: " << comandos->comando_p
-       << ", Valor p: " << comandos->valor_p << endl;
+       << ", Valor p: " << comandos->valor_p << endl;*/
 }
 
 // -------------------------------------------------------------- HILOS
 
-void verificarReservas(char reservacion[100]) 
-{
-  string reservaStr(reservacion);
-  istringstream ss(reservaStr);
-  string token;
-  struct reserva reservas;
-
-  // Obtener cada token y asignarlo a la estructura
-  if (getline(ss, token, ',')) {
-      reservas.Agente = token;
-  }
-
-  if (getline(ss, token, ',')) {
-      reservas.nomFamilia = token;
-  }
-
-  if (getline(ss, token, ',')) {
-      reservas.cantFamiliares = stoi(token);
-  }
-
-  if (getline(ss, token, ',')) {
-      reservas.horaInicio = stoi(token);
-  }
-  
-  
+void verificarReservas(reserva r) 
+{ 
   cout << "Verificando reserva..." << endl; 
-  cout << "Agente: " << reservas.Agente <<endl; 
-  cout << "nombreFamilia: " << reservas.nomFamilia <<endl; 
-  cout << "cant: " << reservas.cantFamiliares <<endl; 
-  cout << "hora: " << reservas.horaInicio << endl; 
+  cout << "Agente: " << r.Agente <<endl; 
+  cout << "nombreFamilia: " << r.nomFamilia <<endl; 
+  cout << "cant: " << r.cantFamiliares <<endl; 
+  cout << "hora: " << r.horaInicio << endl; 
 }
 
 void enviarHora(char* nombrePipe) {
@@ -272,7 +251,7 @@ void enviarHora(char* nombrePipe) {
 
   // Escribir hora en el pipe
   bytesEscritos = write(fd, &horaActual, sizeof(int));
-  
+
   if (bytesEscritos == -1) {
     perror("write");
     std::cerr << "Error al escribir en el pipe" << std::endl;
@@ -306,10 +285,12 @@ void *incrementarHora(void *indice) {
 
 void *verificarContador(void *indice) {
   int nbytes;
-  char n;
+  char n = '0';
   char mensaje[30];
   int fd;
   char reserva[100];
+  struct reserva r;
+  struct agenteInfo infoA;
 
   // Creacion del pipe
   mode_t fifo_mode = S_IRUSR | S_IWUSR;
@@ -325,92 +306,139 @@ void *verificarContador(void *indice) {
     exit(1);
   }
 
-  while (true) {
-    {
-      //Sección crítica protegida por el mutex
-      std::lock_guard<std::mutex> lock(mtx);
-      //std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
-    }
+    while (true) {
+        n = '0';
 
-    if (horaActual >= 19 || horaActual >= horaFinal) {
-      std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos."
-                << std::endl;
-      break;
-    }
-
-    sleep(1);
-    nbytes = read(fd, &n, sizeof(char));
-
-    if (nbytes == -1) {
-      perror("proceso lector id 1:");
-      // Puedes agregar un manejo de error aquí si es necesario
-    } else if (nbytes == 0) {
-      // Verificar si el contador llega a 20
-      {
-        std::lock_guard<std::mutex> lock(mtx);
-        if (horaActual >= 19 || horaActual >= horaFinal) {
-          std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos."
-                    << std::endl;
-          break;
-        }
-      }
-      // ./controlador -i 2 -f 3 -s 5 -t 7 -p pipecrecibe
-      sleep(1);
-      continue;
-    } else {
-      printf("Reabrio el pipe\n");
-      cout << "identificador: " << n << endl;
-
-      if(n=='1')
-      {
-        nbytes = read(fd, &mensaje, sizeof(char[30]));
-        if (nbytes == -1) {
-          perror("proceso lector id 2:");
-          // Puedes agregar un manejo de error aquí si es necesario
-        } 
-        else
+        // Sección crítica protegida por el mutex
         {
-          // se lee nombre del agente
-          printf("Nombre agente: %s\n", mensaje);
-          enviarHora(mensaje);
-          sleep(3);
-          continue;
+            std::lock_guard<std::mutex> lock(mtx);
+            // std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
         }
-      }
-      else if(n=='2')
-      {
-        // se lee estructura de la reserva
-        nbytes = read(fd, &reserva, sizeof(reserva));
+
+        if (horaActual >= 19 || horaActual >= horaFinal) {
+            std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos." << std::endl;
+            break;
+        }
+
+        sleep(1);
+        nbytes = read(fd, &n, sizeof(char));
 
         if (nbytes == -1) {
-          perror("proceso lector id 3:");
-          // Puedes agregar un manejo de error aquí si es necesario
-        } 
-        else
-        {
-          verificarReservas(reserva);
-          continue;
+            perror("proceso lector id 1:");
+            // Puedes agregar un manejo de error aquí si es necesario
+        } else if (nbytes == 0) {
+            // Verificar si el contador llega a 20
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                if (horaActual >= 19 || horaActual >= horaFinal) {
+                    std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos." << std::endl;
+                    break;
+                }
+            }
+            // ./controlador -i 2 -f 3 -s 5 -t 7 -p pipecrecibe
+            sleep(1);
+            continue;
+        } else {
+            // printf("Reabrio el pipe\n");
+            cout << "identificador: " << n << endl;
+
+            if (n == '1') {
+                nbytes = read(fd, &infoA, sizeof(infoA));
+                if (nbytes == -1) {
+                    perror("proceso lector id 2:");
+                    // Puedes agregar un manejo de error aquí si es necesario
+                } else {
+                    // se lee nombre del agente
+                    printf("Nombre agente: %s\n", infoA.nombreAgente);
+                    printf("Pid agente: %d\n", infoA.pid);
+                    agentes.push_back(infoA);
+                    cantAgentes++;
+                    enviarHora(infoA.nombreAgente);
+                    sleep(3);
+                    // Le digo a ese agente que me puede mandar reservas
+                    // Nota: No se envía señal aquí para evitar acumulación
+                    continue;
+                }
+            } else if (n == '2') {
+
+              sleep(3);
+                // se lee estructura de la reserva
+                nbytes = read(fd, &r, sizeof(r));
+
+                if (nbytes == -1) {
+                    perror("proceso lector id 3:");
+                    // Puedes agregar un manejo de error aquí si es necesario
+                } else {
+                    verificarReservas(r);
+
+                    // Se verifica la cantidad de procesos que hay en el vector y el último proceso al que se le permitió enviar información
+                    // Se le da permiso al siguiente agente en el vector de agentes
+                    cout << "posagente" << posAgenteActual << endl;
+                    if (posAgenteActual == cantAgentes - 1) {
+                        cout << "posagente condicion" << posAgenteActual << endl;
+                        posAgenteActual = 0;
+                    } else {
+                        cout << "kill de n=2" << endl;
+                        posAgenteActual++;
+                        cout << "posagente kill" << posAgenteActual << endl;
+                    }
+
+                    // Envía la señal solo si hay agentes en el vector
+                    if (!agentes.empty()) {
+                        if (kill(agentes[posAgenteActual].pid, SIGUSR1) != 0) {
+                            perror("kill");
+                            exit(1);
+                        }
+                    }
+
+                    cout << "salida posagente" << posAgenteActual << endl;
+                }
+                continue;
+            } else if (n == '3') {
+                // Quiere decir que el agente está avisando que terminó su ejecución por lo que debe ser eliminado de la lista de agentes
+                nbytes = read(fd, &infoA, sizeof(infoA));
+
+                if (nbytes == -1) {
+                    perror("proceso lector id 4:");
+                    // Puedes agregar un manejo de error aquí si es necesario
+                } else {
+                    for (int i = 0; i < agentes.size(); i++) {
+                        if (agentes[i].pid == infoA.pid) {
+                            cout << "eliminando: " << agentes[i].pid << endl;
+                            agentes.erase(agentes.begin() + i);
+                            cantAgentes--;
+                            cout << "cant agentes" << cantAgentes << endl;
+                            posAgenteActual--;
+
+                            cout << "pos agentes" << posAgenteActual << endl;
+                            // Ajustar posAgenteActual si es necesario
+                            if (posAgenteActual >= cantAgentes) {
+                                posAgenteActual = 0;
+                            }
+                            break; // Importante salir del bucle después de eliminar el agente
+                        }
+                    }
+                }
+                continue;
+            } else {
+                std::lock_guard<std::mutex> lock(mtx);
+                if (horaActual >= 19 || horaActual >= horaFinal) {
+                    std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos." << std::endl;
+                    break;
+                }
+                continue;
+            }
         }
-      }
-      else {
-        std::lock_guard<std::mutex> lock(mtx);
-        if (horaActual >= 19 || horaActual >= horaFinal) {
-          std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos."
-                    << std::endl;
-          break;
-        }
+        sleep(1);
         continue;
-      }
     }
-    sleep(1);
-    continue;
-  }
 
-  // Cerrar el pipe después de salir del bucle
-  close(fd);
+    // Cerrar el pipe después de salir del bucle
+    close(fd);
 
-  pthread_exit(NULL);
+    pthread_exit(NULL);
 }
+
 
 //--------------------------------------- MAIN
 

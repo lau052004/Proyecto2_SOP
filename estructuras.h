@@ -5,10 +5,16 @@ using namespace std;
 
 
 struct reserva {
-  string Agente;
-  string nomFamilia;
+  char Agente[20];
+  char nomFamilia[20];
   int cantFamiliares;
   int horaInicio;
+};
+
+struct agenteInfo {
+  char nombreAgente[20];
+  int pid;
+  bool primera = true;
 };
 
 #endif /* MI_HEADER_H */

@@ -12,6 +12,7 @@
 #include <string.h>
 #include <string>
 #include <unistd.h>
+#include <signal.h>
 #include <vector>
 #include <sstream>
 #include <sys/stat.h>
@@ -33,9 +34,71 @@ using namespace std;
 // Duración en segundos de una "hora"
 int segundosPorHora;
 char pipeNuevo[30] = "pipe2";
+int fd1;
+char identificador_emisor2 = '2';
+reserva r;
+bool terminado = false;
+agenteInfo infoA;
+
+typedef void (*sighandler_t)(int);
+
+void signalHandler (int signum) {
+  int bytesEscritos;
+  if(terminado == false)
+  {
+    // Debe hacer el código del manejador de señales
+    printf("Desde el Manejador");
+    bytesEscritos =  write(fd1, &identificador_emisor2, sizeof(char));
+
+    if (bytesEscritos == -1) {
+      perror("write");
+      std::cerr << "Error al escribir en el pipe" << std::endl;
+      // Aquí puedes manejar el error según tus necesidades
+      exit(1);
+    } else {
+      std::cout << "Identificador: " << identificador_emisor2 << std::endl;
+    }
+    
+    // Se manda la estructura
+    bytesEscritos =  write(fd1, &r, sizeof(r));
+    //bytesEscritos = write(fd[1], &reservaChar, sizeof(reservaChar));
+    if (bytesEscritos == -1) {
+      perror("write");
+      std::cerr << "Error al escribir en el pipe" << std::endl;
+      // Aquí puedes manejar el error según tus necesidades
+      exit(1);
+    } else {
+      std::cout << "Mandando estructura " << std::endl;
+    }
+  }
+  else {
+    char identificador_emisor3 = '3';
+    bytesEscritos =  write(fd1, &identificador_emisor3, sizeof(char));
+
+    if (bytesEscritos == -1) {
+      perror("write");
+      std::cerr << "Error al escribir en el pipe" << std::endl;
+      // Aquí puedes manejar el error según tus necesidades
+      exit(1);
+    } else {
+      std::cout << "Identificador: " << identificador_emisor3 << std::endl;
+    }
+
+    // Se manda nombre del agente
+    bytesEscritos = write(fd1, &infoA, sizeof(infoA));
+    if (bytesEscritos == -1) {
+      perror("write");
+      std::cerr << "Error al escribir en el pipe" << std::endl;
+      // Aquí puedes manejar el error según tus necesidades
+      exit(1);
+    } else {
+      std::cout << "Nombre del agente: " << infoA.nombreAgente << std::endl;
+    }
+  }
+}
 
 void procesarSolicitudes(string nombreAgente, string archivoSolicitudes) {
-  ifstream archivo(archivoSolicitudes);
+  /*ifstream archivo(archivoSolicitudes);
 
   if (!archivo.is_open()) {
     cerr << "Error al abrir el archivo de solicitudes." << endl;
@@ -67,7 +130,7 @@ void procesarSolicitudes(string nombreAgente, string archivoSolicitudes) {
          << endl;
   }
 
-  archivo.close();
+  archivo.close();*/
 }
 
 void recibirhora(string nombreAgente)
@@ -103,15 +166,19 @@ void recibirhora(string nombreAgente)
 void primeraConexion(string nombreAgente) {
   // procesarSolicitudes(nombreAgente, archivoSolicitudes, pipeCrecibe);
   // Crear pipe de escritura
-  int fd[2], pid, n, creado = 0;
-  reserva reservas;
+  int pid, n, creado = 0;
+  string familia = "familia perez";
   char nombreAgenteChar[nombreAgente.length() + 1]; 
   strcpy(nombreAgenteChar, nombreAgente.c_str());
 
-    reservas.Agente = nombreAgente;
-    reservas.nomFamilia = "familia perez";
-    reservas.cantFamiliares = 5;
-    reservas.horaInicio = 7;
+  strcpy(r.Agente, nombreAgente.c_str());
+  strcpy(r.nomFamilia, familia.c_str());
+  r.cantFamiliares = 5;
+  r.horaInicio = 7;
+
+
+  strcpy(infoA.nombreAgente, nombreAgente.c_str());
+  infoA.pid = getpid();
 
   //n = getpid();
   // Este trozo de codigo contiene un sleep porque se está tratando de abrir un
@@ -121,8 +188,8 @@ void primeraConexion(string nombreAgente) {
   string pipenom = "pipecrecibe";
 
   do {
-    fd[1] = open(pipenom.c_str(), O_WRONLY);
-    if (fd[1] == -1) {
+    fd1 = open(pipenom.c_str(), O_WRONLY);
+    if (fd1 == -1) {
       perror("pipe");
       printf(" Se volvera a intentar despues\n");
       sleep(5);
@@ -130,7 +197,7 @@ void primeraConexion(string nombreAgente) {
       creado = 1;
   } while (creado == 0);
 
-  printf("Abrio el pipe, descriptor %d\n", fd[1]);
+  printf("Abrio el pipe, descriptor %d\n", fd1);
   // las llamadas al sistema write, deben validarse, también pueden devolver
   // error
   // El 1 es para incluir el caracter NULL (fin de string) porque strlen no lo
@@ -138,7 +205,7 @@ void primeraConexion(string nombreAgente) {
 
   // Se manda identificador de nombre del agente
   char identificador_emisor = '1';
-  ssize_t bytesEscritos =  write(fd[1], &identificador_emisor, sizeof(char));
+  ssize_t bytesEscritos =  write(fd1, &identificador_emisor, sizeof(char));
 
   if (bytesEscritos == -1) {
     perror("write");
@@ -150,7 +217,7 @@ void primeraConexion(string nombreAgente) {
   }
 
   // Se manda nombre del agente
-  bytesEscritos = write(fd[1], &nombreAgenteChar, sizeof(nombreAgenteChar));
+  bytesEscritos = write(fd1, &infoA, sizeof(infoA));
   if (bytesEscritos == -1) {
     perror("write");
     std::cerr << "Error al escribir en el pipe" << std::endl;
@@ -162,52 +229,46 @@ void primeraConexion(string nombreAgente) {
 
   recibirhora(nombreAgente);
 
-
+  sleep(3);
 
   // Se manda identificador de la estructura
-  char identificador_emisor2 = '2';
+  bytesEscritos =  write(fd1, &identificador_emisor2, sizeof(char));
 
-  for(int i=0;i<2;i++)
-    {
-      sleep(3);
-      
-      bytesEscritos =  write(fd[1], &identificador_emisor2, sizeof(char));
+  if (bytesEscritos == -1) {
+    perror("write");
+    std::cerr << "Error al escribir en el pipe" << std::endl;
+    // Aquí puedes manejar el error según tus necesidades
+    exit(1);
+  } else {
+    std::cout << "Identificador: " << identificador_emisor2 << std::endl;
+  }
 
-      if (bytesEscritos == -1) {
-        perror("write");
-        std::cerr << "Error al escribir en el pipe" << std::endl;
-        // Aquí puedes manejar el error según tus necesidades
-        exit(1);
-      } else {
-        std::cout << "Identificador: " << identificador_emisor << std::endl;
-      }
-
-      ostringstream ss;
-      ss << reservas.Agente << "," << reservas.nomFamilia << "," << reservas.horaInicio << "," << reservas.cantFamiliares;
-
-      // Convertir la cadena a char
-      string reservaStr = ss.str();
-      char reservaChar[reservaStr.length() + 1];
-      strcpy(reservaChar, reservaStr.c_str());
-
-      // Se manda la estructura
-      bytesEscritos = write(fd[1], &reservaChar, sizeof(reservaChar));
-      if (bytesEscritos == -1) {
-        perror("write");
-        std::cerr << "Error al escribir en el pipe" << std::endl;
-        // Aquí puedes manejar el error según tus necesidades
-        exit(1);
-      } else {
-        std::cout << "Mandando estructura " << reservaChar << std::endl;
-      }
-    }
+  // Se manda la estructura
+  bytesEscritos =  write(fd1, &r, sizeof(r));
+  //bytesEscritos = write(fd[1], &reservaChar, sizeof(reservaChar));
+  if (bytesEscritos == -1) {
+    perror("write");
+    std::cerr << "Error al escribir en el pipe" << std::endl;
+    // Aquí puedes manejar el error según tus necesidades
+    exit(1);
+  } else {
+    std::cout << "Mandando estructura " << std::endl;
+  }
   
+  sleep(3);
 
+  pause();
+
+  sleep(3);
+    
   // El 1 es para incluir el caracter NULL (fin de string) porque strlen no lo
   // hace.
   // Llamada al sistema write, debe validarse y también puede devolver error
+  terminado = true;
 
-  close(fd[1]);
+  pause();
+
+  close(fd1);
   printf("Se cierra el pipe para escritura\n");
 }
 
@@ -234,6 +295,8 @@ int main(int argc, char *argv[]) {
       return 1;
     }
   }
+
+  signal(SIGUSR1, (sighandler_t) signalHandler);
 
   primeraConexion(nombreAgente);
 
