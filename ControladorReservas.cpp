@@ -13,6 +13,10 @@
 #include <vector>
 #include <cstring>
 #include <sstream>
+#include <stdio.h>
+#include <signal.h>
+#include <thread>
+#include <chrono>
 #include "estructuras.h"
 
 using namespace std;
@@ -47,8 +51,15 @@ int posAgenteActual=0;
 vector<reserva> reservas;
 string nombrePipe1;
 vector <string> nombrePipesReserva;
-vector <agenteInfo> agentes;
+vector <string> agentes;
 
+int alarmFlag=0;
+
+void signalHandler(int signum) {
+  horaActual++;
+  cout << "Hora Actual " << horaActual << endl;
+  alarmFlag = 1;
+}
 
 // FUNCIONES VERIFICACIÓN DE COMANDOS
 // -------------------------------------------------------------------------------------------
@@ -240,12 +251,17 @@ void verificarReservas(reserva r)
 }
 
 void enviarHora(char* nombrePipe) {
-  int fd, bytesEscritos;
+  int fd, bytesEscritos, creado = 0;
 
-  fd = open(nombrePipe, O_WRONLY);
-  if (fd == -1) {
-    perror("proceso escritor:");
-  }
+  do {
+    fd = open(nombrePipe, O_WRONLY);
+    if (fd == -1) {
+      perror("pipe");
+      printf(" Se volvera a intentar despues\n");
+      sleep(3);
+    } else
+      creado = 1;
+  } while (creado == 0);
 
   printf("Abrio el pipe de escritura %d\n", fd);
 
@@ -263,24 +279,20 @@ void enviarHora(char* nombrePipe) {
 }
 
 void *incrementarHora(void *indice) {
+  signal(SIGALRM, signalHandler);
   while (true) {
-    sleep(segundosHora); // usleep(3000000); en sistemas que no tienen sleep
+    alarmFlag = 0;
+    alarm(3);
+    while (alarmFlag != 1) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 
-    // Sección crítica protegida por el mutex
-    std::lock_guard<std::mutex> lock(mtx);
-    horaActual++;
-
-    std::cout << "Hilo 1: Hora Actual = " << horaActual << std::endl;
-
-    // Llamar a la función hacerAlgo cada vez que se incrementa el contador
-    //verificarReservas();
-
-    // Verificar si el contador llega a 10
     if (horaActual >= 19 || horaActual >= horaFinal) {
-      break; // Salir del bucle si el contador llega a 10
+        cout << "Hilo 1: Contador alcanzó " << horaFinal << ". Terminando los hilos." << endl;
+        break;
     }
   }
-  pthread_exit(NULL);
+  exit(0);
 }
 
 void *verificarContador(void *indice) {
@@ -290,7 +302,6 @@ void *verificarContador(void *indice) {
   int fd;
   char reserva[100];
   struct reserva r;
-  struct agenteInfo infoA;
 
   // Creacion del pipe
   mode_t fifo_mode = S_IRUSR | S_IWUSR;
@@ -300,144 +311,40 @@ void *verificarContador(void *indice) {
   }
 
   // Apertura del pipe.
-  if ((fd = open(nombrePipe1.c_str(), O_RDONLY /*| O_NONBLOCK*/)) == -1) {
+  if ((fd = open(nombrePipe1.c_str(), O_RDONLY)) == -1) {
     perror("open:");
     // Puedes agregar un manejo de error aquí si es necesario
     exit(1);
   }
 
-    while (true) {
-        n = '0';
+  while (true) {
+      // Sección crítica protegida por el mutex
+      {
+          std::lock_guard<std::mutex> lock(mtx);
+          //std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
+      }
 
-        // Sección crítica protegida por el mutex
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            // std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
-        }
+      nbytes = read(fd, &r, sizeof(r));
 
-        if (horaActual >= 19 || horaActual >= horaFinal) {
-            std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos." << std::endl;
-            break;
-        }
-
-        sleep(1);
-        nbytes = read(fd, &n, sizeof(char));
-
-        if (nbytes == -1) {
-            perror("proceso lector id 1:");
-            // Puedes agregar un manejo de error aquí si es necesario
-        } else if (nbytes == 0) {
-            // Verificar si el contador llega a 20
-            {
-                std::lock_guard<std::mutex> lock(mtx);
-                if (horaActual >= 19 || horaActual >= horaFinal) {
-                    std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos." << std::endl;
-                    break;
-                }
-            }
-            // ./controlador -i 2 -f 3 -s 5 -t 7 -p pipecrecibe
-            sleep(1);
-            continue;
-        } else {
-            // printf("Reabrio el pipe\n");
-            cout << "identificador: " << n << endl;
-
-            if (n == '1') {
-                nbytes = read(fd, &infoA, sizeof(infoA));
-                if (nbytes == -1) {
-                    perror("proceso lector id 2:");
-                    // Puedes agregar un manejo de error aquí si es necesario
-                } else {
-                    // se lee nombre del agente
-                    printf("Nombre agente: %s\n", infoA.nombreAgente);
-                    printf("Pid agente: %d\n", infoA.pid);
-                    agentes.push_back(infoA);
-                    cantAgentes++;
-                    enviarHora(infoA.nombreAgente);
-                    sleep(3);
-                    // Le digo a ese agente que me puede mandar reservas
-                    // Nota: No se envía señal aquí para evitar acumulación
-                    continue;
-                }
-            } else if (n == '2') {
-
-              sleep(3);
-                // se lee estructura de la reserva
-                nbytes = read(fd, &r, sizeof(r));
-
-                if (nbytes == -1) {
-                    perror("proceso lector id 3:");
-                    // Puedes agregar un manejo de error aquí si es necesario
-                } else {
-                    verificarReservas(r);
-
-                    // Se verifica la cantidad de procesos que hay en el vector y el último proceso al que se le permitió enviar información
-                    // Se le da permiso al siguiente agente en el vector de agentes
-                    cout << "posagente" << posAgenteActual << endl;
-                    if (posAgenteActual == cantAgentes - 1) {
-                        cout << "posagente condicion" << posAgenteActual << endl;
-                        posAgenteActual = 0;
-                    } else {
-                        cout << "kill de n=2" << endl;
-                        posAgenteActual++;
-                        cout << "posagente kill" << posAgenteActual << endl;
-                    }
-
-                    // Envía la señal solo si hay agentes en el vector
-                    if (!agentes.empty()) {
-                        if (kill(agentes[posAgenteActual].pid, SIGUSR1) != 0) {
-                            perror("kill");
-                            exit(1);
-                        }
-                    }
-
-                    cout << "salida posagente" << posAgenteActual << endl;
-                }
-                continue;
-            } else if (n == '3') {
-                // Quiere decir que el agente está avisando que terminó su ejecución por lo que debe ser eliminado de la lista de agentes
-                nbytes = read(fd, &infoA, sizeof(infoA));
-
-                if (nbytes == -1) {
-                    perror("proceso lector id 4:");
-                    // Puedes agregar un manejo de error aquí si es necesario
-                } else {
-                    for (int i = 0; i < agentes.size(); i++) {
-                        if (agentes[i].pid == infoA.pid) {
-                            cout << "eliminando: " << agentes[i].pid << endl;
-                            agentes.erase(agentes.begin() + i);
-                            cantAgentes--;
-                            cout << "cant agentes" << cantAgentes << endl;
-                            if(i!=0)
-                            {
-                              posAgenteActual=i-1;
-                            }
-                            else{
-                              posAgenteActual=i;
-                            }
-                          
-                            cout << "pos agentes" << posAgenteActual << endl;
-                            // Ajustar posAgenteActual si es necesario
-                            if (posAgenteActual >= cantAgentes) {
-                                posAgenteActual = 0;
-                            }
-                            break; // Importante salir del bucle después de eliminar el agente
-                        }
-                    }
-                }
-                continue;
-            } else {
-                std::lock_guard<std::mutex> lock(mtx);
-                if (horaActual >= 19 || horaActual >= horaFinal) {
-                    std::cout << "Hilo 2: Contador alcanzó 20. Terminando los hilos." << std::endl;
-                    break;
-                }
-                continue;
-            }
-        }
-        sleep(1);
+      if (nbytes == -1) {
+          perror("pipe:");
+          exit(0);
+      } 
+      else if(nbytes==0)
+      {
         continue;
-    }
+      }
+    
+      if(r.registro==true) {
+        printf("Nombre agente: %s\n", r.Agente);
+        agentes.push_back(r.Agente);
+        enviarHora(r.Agente);
+        continue;
+      } else if(r.registro==false) {
+          verificarReservas(r);
+          continue;
+      }
+  }
 
     // Cerrar el pipe después de salir del bucle
     close(fd);
@@ -472,6 +379,9 @@ int main(int argc, char *argv[]) {
   totalPersonas = comandos.valor_t;
 
   // ---------------------- INICIANDO EL PROGRAMA
+  //signal (SIGALRM, (sighandler_t)signalHandler);
+  //signal (SIGALRM, (sighandler_t)signalHandler); // Establece signalHandler como el manejador para SIGALRM
+  
   nombrePipe1 = comandos.valor_p;
   pthread_t threads[2];
 

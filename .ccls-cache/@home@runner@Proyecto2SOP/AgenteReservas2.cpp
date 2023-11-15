@@ -22,14 +22,6 @@
 
 using namespace std;
 
-/*struct Registro {
-  string agente;
-  string nombre;
-  int hora;
-  int personas;
-};*/
-
-
 
 // Duración en segundos de una "hora"
 int segundosPorHora;
@@ -38,64 +30,6 @@ int fd1;
 char identificador_emisor2 = '2';
 reserva r;
 bool terminado = false;
-agenteInfo infoA;
-
-typedef void (*sighandler_t)(int);
-
-void signalHandler (int signum) {
-  int bytesEscritos;
-  if(terminado == false)
-  {
-    // Debe hacer el código del manejador de señales
-    printf("Desde el Manejador");
-    bytesEscritos =  write(fd1, &identificador_emisor2, sizeof(char));
-
-    if (bytesEscritos == -1) {
-      perror("write");
-      std::cerr << "Error al escribir en el pipe" << std::endl;
-      // Aquí puedes manejar el error según tus necesidades
-      exit(1);
-    } else {
-      std::cout << "Identificador: " << identificador_emisor2 << std::endl;
-    }
-
-    // Se manda la estructura
-    bytesEscritos =  write(fd1, &r, sizeof(r));
-    //bytesEscritos = write(fd[1], &reservaChar, sizeof(reservaChar));
-    if (bytesEscritos == -1) {
-      perror("write");
-      std::cerr << "Error al escribir en el pipe" << std::endl;
-      // Aquí puedes manejar el error según tus necesidades
-      exit(1);
-    } else {
-      std::cout << "Mandando estructura " << std::endl;
-    }
-  }
-  else {
-    char identificador_emisor3 = '3';
-    bytesEscritos =  write(fd1, &identificador_emisor3, sizeof(char));
-
-    if (bytesEscritos == -1) {
-      perror("write");
-      std::cerr << "Error al escribir en el pipe" << std::endl;
-      // Aquí puedes manejar el error según tus necesidades
-      exit(1);
-    } else {
-      std::cout << "Identificador: " << identificador_emisor3 << std::endl;
-    }
-
-    // Se manda nombre del agente
-    bytesEscritos = write(fd1, &infoA, sizeof(infoA));
-    if (bytesEscritos == -1) {
-      perror("write");
-      std::cerr << "Error al escribir en el pipe" << std::endl;
-      // Aquí puedes manejar el error según tus necesidades
-      exit(1);
-    } else {
-      std::cout << "Nombre del agente: " << infoA.nombreAgente << std::endl;
-    }
-  }
-}
 
 void procesarSolicitudes(string nombreAgente, string archivoSolicitudes) {
   /*ifstream archivo(archivoSolicitudes);
@@ -166,19 +100,14 @@ void recibirhora(string nombreAgente)
 void primeraConexion(string nombreAgente) {
   // procesarSolicitudes(nombreAgente, archivoSolicitudes, pipeCrecibe);
   // Crear pipe de escritura
+  int bytesEscritos;
   int pid, n, creado = 0;
   string familia = "familia perez";
   char nombreAgenteChar[nombreAgente.length() + 1]; 
   strcpy(nombreAgenteChar, nombreAgente.c_str());
-
+  r.registro = true;
   strcpy(r.Agente, nombreAgente.c_str());
-  strcpy(r.nomFamilia, familia.c_str());
-  r.cantFamiliares = 5;
-  r.horaInicio = 7;
 
-
-  strcpy(infoA.nombreAgente, nombreAgente.c_str());
-  infoA.pid = getpid();
 
   //n = getpid();
   // Este trozo de codigo contiene un sleep porque se está tratando de abrir un
@@ -198,52 +127,9 @@ void primeraConexion(string nombreAgente) {
   } while (creado == 0);
 
   printf("Abrio el pipe, descriptor %d\n", fd1);
-  // las llamadas al sistema write, deben validarse, también pueden devolver
-  // error
-  // El 1 es para incluir el caracter NULL (fin de string) porque strlen no lo
-  // hace.
 
-  // Se manda identificador de nombre del agente
-  char identificador_emisor = '1';
-  ssize_t bytesEscritos =  write(fd1, &identificador_emisor, sizeof(char));
 
-  if (bytesEscritos == -1) {
-    perror("write");
-    std::cerr << "Error al escribir en el pipe" << std::endl;
-    // Aquí puedes manejar el error según tus necesidades
-    exit(1);
-  } else {
-    std::cout << "Identificador: " << identificador_emisor << std::endl;
-  }
-
-  // Se manda nombre del agente
-  bytesEscritos = write(fd1, &infoA, sizeof(infoA));
-  if (bytesEscritos == -1) {
-    perror("write");
-    std::cerr << "Error al escribir en el pipe" << std::endl;
-    // Aquí puedes manejar el error según tus necesidades
-    exit(1);
-  } else {
-    std::cout << "Nombre del agente: " << nombreAgenteChar << std::endl;
-  }
-
-  recibirhora(nombreAgente);
-
-  sleep(3);
-
-  // Se manda identificador de la estructura
-  bytesEscritos =  write(fd1, &identificador_emisor2, sizeof(char));
-
-  if (bytesEscritos == -1) {
-    perror("write");
-    std::cerr << "Error al escribir en el pipe" << std::endl;
-    // Aquí puedes manejar el error según tus necesidades
-    exit(1);
-  } else {
-    std::cout << "Identificador: " << identificador_emisor2 << std::endl;
-  }
-
-  // Se manda la estructura
+  // Se manda la estructura de registro
   bytesEscritos =  write(fd1, &r, sizeof(r));
   //bytesEscritos = write(fd[1], &reservaChar, sizeof(reservaChar));
   if (bytesEscritos == -1) {
@@ -255,18 +141,35 @@ void primeraConexion(string nombreAgente) {
     std::cout << "Mandando estructura " << std::endl;
   }
 
-  sleep(3);
+  // Se recibe la hora actual
+  recibirhora(nombreAgente);
+   r.registro = false;
+  strcpy(r.nomFamilia, familia.c_str());
+  r.cantFamiliares = 5;
+  r.horaInicio = 7;
 
-  pause();
+  // Se inicia con el envío de reservas
+  for(int i=0;i<3;i++)
+  {
+    sleep(3);
 
-  sleep(3);
+    if(i==2)
+    {
+      r.ultimo = true;
+    }
 
-  // El 1 es para incluir el caracter NULL (fin de string) porque strlen no lo
-  // hace.
-  // Llamada al sistema write, debe validarse y también puede devolver error
-  terminado = true;
-
-  pause();
+    // Se manda la estructura
+    bytesEscritos =  write(fd1, &r, sizeof(r));
+    //bytesEscritos = write(fd[1], &reservaChar, sizeof(reservaChar));
+    if (bytesEscritos == -1) {
+      perror("write");
+      std::cerr << "Error al escribir en el pipe" << std::endl;
+      // Aquí puedes manejar el error según tus necesidades
+      exit(1);
+    } else {
+      std::cout << "Mandando estructura " << std::endl;
+    }
+  }
 
   close(fd1);
   printf("Se cierra el pipe para escritura\n");
@@ -295,8 +198,6 @@ int main(int argc, char *argv[]) {
       return 1;
     }
   }
-
-  signal(SIGUSR1, (sighandler_t) signalHandler);
 
   primeraConexion(nombreAgente);
 
