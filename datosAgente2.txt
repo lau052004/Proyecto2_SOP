@@ -1,0 +1,3 @@
+Sancho,12,4
+Mendez,14,6
+Rojas,14,10

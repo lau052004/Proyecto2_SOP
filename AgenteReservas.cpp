@@ -32,7 +32,7 @@ reserva r;
 bool terminado = false;
 
 void procesarSolicitudes(string nombreAgente, string archivoSolicitudes) {
-  /*ifstream archivo(archivoSolicitudes);
+  ifstream archivo(archivoSolicitudes);
 
   if (!archivo.is_open()) {
     cerr << "Error al abrir el archivo de solicitudes." << endl;
@@ -41,13 +41,16 @@ void procesarSolicitudes(string nombreAgente, string archivoSolicitudes) {
 
   string linea;
   reserva reservas;
-
+  
   while (getline(archivo, linea)) {
+    strcpy(reservas.Agente, nombreAgente.c_str());
+    reservas.registro = false;
     istringstream ss(linea);
     string token;
 
     if (getline(ss, token, ',')) {
-      reservas.nomFamilia = token;
+      strncpy(reservas.nomFamilia, token.c_str(), sizeof(reservas.nomFamilia));
+      reservas.nomFamilia[sizeof(reservas.nomFamilia) - 1] = '\0'; 
     }
 
     if (getline(ss, token, ',')) {
@@ -58,13 +61,18 @@ void procesarSolicitudes(string nombreAgente, string archivoSolicitudes) {
       reservas.cantFamiliares = stoi(token);
     }
 
-    // Aquí puedes enviar la solicitud al controlador y esperar la respuesta
-    cout << "Agente: " << nombreAgente << ", Nombre: " << reservas.Agente
-         << ", Hora: " << reservas.horaInicio << ", Personas: " << reservas.cantFamiliares
-         << endl;
+    sleep(3);
+
+    // Envía la solicitud al controlador
+    int bytesEscritos = write(fd1, &reservas, sizeof(reservas));
+    if (bytesEscritos == -1) {
+      perror("write");
+      cerr << "Error al escribir en el pipe" << endl;
+      exit(1);
+    }
   }
 
-  archivo.close();*/
+  archivo.close();
 }
 
 void recibirhora(string nombreAgente)
@@ -97,24 +105,12 @@ void recibirhora(string nombreAgente)
   }
 }
 
-void primeraConexion(string nombreAgente) {
-  // procesarSolicitudes(nombreAgente, archivoSolicitudes, pipeCrecibe);
+void primeraConexion(string nombreAgente, string archivoSolicitudes) {
   // Crear pipe de escritura
-  int bytesEscritos;
-  int pid, n, creado = 0;
-  string familia = "familia perez";
-  char nombreAgenteChar[nombreAgente.length() + 1]; 
-  strcpy(nombreAgenteChar, nombreAgente.c_str());
-  r.registro = true;
-  strcpy(r.Agente, nombreAgente.c_str());
-  
-
-  //n = getpid();
-  // Este trozo de codigo contiene un sleep porque se está tratando de abrir un
-  // pipe que crea otro proceso, así da tiempo de que nom2 lo cree si no lo ha
-  // creado.
-
+  int creado = 0;
   string pipenom = "pipecrecibe";
+  strcpy(r.Agente, nombreAgente.c_str());
+  r.registro = true;
 
   do {
     fd1 = open(pipenom.c_str(), O_WRONLY);
@@ -128,9 +124,8 @@ void primeraConexion(string nombreAgente) {
 
   printf("Abrio el pipe, descriptor %d\n", fd1);
 
-  
   // Se manda la estructura de registro
-  bytesEscritos =  write(fd1, &r, sizeof(r));
+  int bytesEscritos =  write(fd1, &r, sizeof(r));
   //bytesEscritos = write(fd[1], &reservaChar, sizeof(reservaChar));
   if (bytesEscritos == -1) {
     perror("write");
@@ -143,36 +138,12 @@ void primeraConexion(string nombreAgente) {
 
   // Se recibe la hora actual
   recibirhora(nombreAgente);
-   r.registro = false;
-  strcpy(r.nomFamilia, familia.c_str());
-  r.cantFamiliares = 5;
-  r.horaInicio = 7;
 
-  // Se inicia con el envío de reservas
-  for(int i=0;i<3;i++)
-  {
-    sleep(3);
-
-    if(i==2)
-    {
-      r.ultimo = true;
-    }
-
-    // Se manda la estructura
-    bytesEscritos =  write(fd1, &r, sizeof(r));
-    //bytesEscritos = write(fd[1], &reservaChar, sizeof(reservaChar));
-    if (bytesEscritos == -1) {
-      perror("write");
-      std::cerr << "Error al escribir en el pipe" << std::endl;
-      // Aquí puedes manejar el error según tus necesidades
-      exit(1);
-    } else {
-      std::cout << "Mandando estructura " << std::endl;
-    }
-  }
+  // Llama a procesarSolicitudes para leer y enviar las reservas
+  procesarSolicitudes(nombreAgente, archivoSolicitudes);
 
   close(fd1);
-  printf("Se cierra el pipe para escritura\n");
+  cout << "Se cierra el pipe para escritura" << endl;
 }
 
 int main(int argc, char *argv[]) {
@@ -199,9 +170,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  primeraConexion(nombreAgente);
-
-  procesarSolicitudes(nombreAgente, archivoSolicitudes);
+  primeraConexion(nombreAgente, archivoSolicitudes);
 
   return 0;
 }
