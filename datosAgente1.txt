@@ -1,3 +1,7 @@
-Zuluaga,8,10
-Perez,8,4
-Vera,10,10
+Gomez,7,10
+Garcia,12,10
+Lopez,13,12
+Zuluaga,12,10
+Perez,18,15
+Ramirez,11,10
+Torres,12,15

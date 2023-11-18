@@ -3,7 +3,6 @@
 #include <iostream>
 using namespace std;
 
-
 struct reserva {
   bool registro = true;
   char Agente[20];
@@ -11,7 +10,9 @@ struct reserva {
   int cantFamiliares;
   int horaInicio;
   bool ultimo = false;
-  int respuesta=0; 
+  int respuesta = 0;
+  bool reAgendado = false;
+  int horaReAgendada;
 };
 
 #endif /* MI_HEADER_H */

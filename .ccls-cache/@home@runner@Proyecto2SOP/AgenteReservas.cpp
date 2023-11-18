@@ -21,7 +21,7 @@
 #include "estructuras.h"
 
 using namespace std;
-
+void recibirRespuesta(string nombreAgente);
 
 // Duración en segundos de una "hora"
 int segundosPorHora;
@@ -60,8 +60,8 @@ void procesarSolicitudes(string nombreAgente, string archivoSolicitudes) {
     if (getline(ss, token, ',')) {
       reservas.cantFamiliares = stoi(token);
     }
-
-    sleep(3);
+    recibirRespuesta(nombreAgente);
+    sleep(2);
 
     // Envía la solicitud al controlador
     int bytesEscritos = write(fd1, &reservas, sizeof(reservas));
@@ -102,6 +102,58 @@ void recibirhora(string nombreAgente)
   }
   else{
     cout << "Hora Actual" << n << endl;
+  }
+}
+void recibirRespuesta(string nombreAgente) {
+int fd, nbytes;
+reserva r;
+
+// Apertura del pipe de forma no bloqueante.
+fd = open(nombreAgente.c_str(), O_RDONLY | O_NONBLOCK);
+if (fd == -1) {
+    perror("open:");
+    return;
+}
+
+nbytes = read(fd, &r, sizeof(reserva));
+if (nbytes == -1) {
+    if (errno == EAGAIN) {
+        // No hay datos disponibles para leer en este momento.
+        cout << "No hay datos disponibles para leer." << endl;
+    } else {
+        perror("read:");
+    }
+  } else if (nbytes == 0) {
+    cout << "Pipe cerrado." << endl;
+} else{
+    cout << "Nombre de la familia: " << r.nomFamilia <<endl; 
+    cout << "Cantidad de personas: " << r.cantFamiliares <<endl; 
+    cout << "Hora: " << r.horaInicio << endl;
+    cout<< "Respuesta: ";
+    switch (r.respuesta) {
+        case 1:
+            cout << " - Reserva aprobada para la familia " << r.nomFamilia << " a las " << r.horaInicio << " horas." << endl;
+            break;
+        case 2:
+            cout << " - Reserva garantizada para otra hora (reajustada a las " << r.horaReAgendada << " horas) para la familia " << r.nomFamilia << "." << endl;
+            break;
+        case 3:
+            if(r.reAgendado)
+            {
+              cout <<" - Reserva negada por tarde para la familia " << r.nomFamilia << ". Pero se reajustada a las " << r.horaReAgendada<<endl;
+            }
+            else
+            {
+              cout <<" - Reserva negada por tarde para la familia " << r.nomFamilia << ". No se encontró otro bloque de tiempo disponible."<<endl;
+            }
+            break;
+        case 4:
+            cout << " - Reserva negada para la familia " << r.nomFamilia << ". Debe volver otro día." << endl;
+            break;
+        default:
+            cout << " - Estado de reserva desconocido para la familia " << r.nomFamilia << "." << endl;
+            break;
+    }
   }
 }
 

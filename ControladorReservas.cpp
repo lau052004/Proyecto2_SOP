@@ -246,6 +246,28 @@ void verificarComando(int argc, string argumentos[], comando *comandos) {
 // Map global que tiene como clave la hora y como valor un vector de reservas.
 std::map<int, std::vector<reserva>> reservasPorHora;
 
+void enviarResultado(const char* nombreAgente, const reserva& r) {
+    int fd;
+    while ((fd = open(nombreAgente, O_WRONLY)) == -1) {
+        perror("pipe");
+        cout << "Se volverá a intentar después" << endl;
+        sleep(3);
+    }
+    cout << "Se abrió el pipe para escribir, descriptor " << fd << endl;
+
+    // Enviar la estructura reserva.
+    int bytesEscritos = write(fd, &r, sizeof(reserva));
+    if (bytesEscritos == -1) {
+        perror("write");
+        cerr << "Error al escribir en el pipe" << endl;
+        exit(1);
+    } else {
+        cout << "Resultado de la reserva enviado" << endl;
+    }
+    close(fd);
+    cout << "Se cierra el pipe para escritura" << endl;
+}
+
 // Función para inicializar las horas en el map.
 void inicializarHoras() {
     for (int hora = 7; hora <= 19; ++hora) {
@@ -254,8 +276,13 @@ void inicializarHoras() {
 }
 
 void verificarReservas(reserva& r) {
-    std::lock_guard<std::mutex> lock(mtx); // Proteger la operación con un mutex.
-
+    cout<<endl;
+    cout << "Verificando reserva..." << endl; 
+    cout << "Agente: " << r.Agente <<endl; 
+    cout << "nombreFamilia: " << r.nomFamilia <<endl; 
+    cout << "cant: " << r.cantFamiliares <<endl; 
+    cout << "hora: " << r.horaInicio << endl;
+  
     auto personasEnHora = [&](int hora) {
         int totalPersonasHora = 0;
         for (const auto& reserva : reservasPorHora[hora]) {
@@ -277,17 +304,13 @@ void verificarReservas(reserva& r) {
                 }
             }
             if (bloqueDisponible) {
-                r.horaInicio = i; // Actualizar la hora de inicio a la nueva hora.
+                r.horaReAgendada = i; // Actualizar la hora de inicio a la nueva hora.
                 for (int j = i; j < i + 2; ++j) {
                     reservasPorHora[j].push_back(r);
                 }
-                reservaAlternativa = true;
+                r.reAgendado = true;
                 break;
             }
-        }
-        if (!reservaAlternativa) {
-            // No se encontró un bloque alternativo, la reserva se mantiene negada por tarde.
-          cout<<"tite";
         }
     } else if (r.horaInicio >= horaFinal) {
         r.respuesta = 4; // Reserva negada, debe volver otro día.
@@ -319,7 +342,7 @@ void verificarReservas(reserva& r) {
                 }
                 if (bloqueDisponible) {
                     r.respuesta = 2; // Reserva garantizada para otra hora.
-                    r.horaInicio = i; // Actualizar la hora de inicio a la nueva hora.
+                    r.horaReAgendada = i; // Actualizar la hora de inicio a la nueva hora.
                     for (int j = i; j < i + 2; ++j) {
                         reservasPorHora[j].push_back(r);
                     }
@@ -332,6 +355,7 @@ void verificarReservas(reserva& r) {
             }
         }
     }
+  enviarResultado(r.Agente, r);
 }
 
 //--------------------------------------- Verificacion
@@ -362,6 +386,8 @@ void enviarHora(char* nombrePipe) {
     std::cout << "Hora enviada: " << horaActual << std::endl;
   }
 }
+//--------------------------------------------
+
 
 void *incrementarHora(void *indice) {
   signal(SIGALRM, signalHandler);
@@ -374,6 +400,7 @@ void *incrementarHora(void *indice) {
 
     if (horaActual >= 19 || horaActual >= horaFinal) {
         cout << "Hilo 1: Contador alcanzó " << horaFinal << ". Terminando los hilos." << endl;
+
         break;
     }
   }
