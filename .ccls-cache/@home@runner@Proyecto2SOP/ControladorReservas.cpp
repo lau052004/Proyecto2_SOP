@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <signal.h>
 #include <thread>
+#include <vector>
+#include <map>
 #include <chrono>
 #include "estructuras.h"
 
@@ -45,7 +47,7 @@ std::mutex mtx; // Mutex para proteger la variable compartida
 int horaActual; // Hora actual del parque
 int segundosHora;
 int horaFinal;
-int totalPersonas;
+int totalPersonas; //aforo maximo
 int cantAgentes=0;
 int posAgenteActual=0;
 vector<reserva> reservas;
@@ -241,15 +243,98 @@ void verificarComando(int argc, string argumentos[], comando *comandos) {
 
 // -------------------------------------------------------------- HILOS
 
-void verificarReservas(reserva r) 
-{ 
-  cout << "Verificando reserva..." << endl; 
-  cout << "Agente: " << r.Agente <<endl; 
-  cout << "nombreFamilia: " << r.nomFamilia <<endl; 
-  cout << "cant: " << r.cantFamiliares <<endl; 
-  cout << "hora: " << r.horaInicio << endl; 
+// Map global que tiene como clave la hora y como valor un vector de reservas.
+std::map<int, std::vector<reserva>> reservasPorHora;
+
+// Función para inicializar las horas en el map.
+void inicializarHoras() {
+    for (int hora = 7; hora <= 19; ++hora) {
+        reservasPorHora[hora] = std::vector<reserva>();
+    }
 }
 
+void verificarReservas(reserva& r) {
+    std::lock_guard<std::mutex> lock(mtx); // Proteger la operación con un mutex.
+
+    auto personasEnHora = [&](int hora) {
+        int totalPersonasHora = 0;
+        for (const auto& reserva : reservasPorHora[hora]) {
+            totalPersonasHora += reserva.cantFamiliares;
+        }
+        return totalPersonasHora;
+    };
+
+    // Comprobar si la hora solicitada ya pasó.
+    if (r.horaInicio < horaActual) {
+        r.respuesta = 3; // Reserva negada por tarde e intentar encontrar otro bloque de tiempo disponible.
+        bool reservaAlternativa = false;
+        for (int i = horaActual + 1; i <= horaFinal - 2; ++i) {
+            bool bloqueDisponible = true;
+            for (int j = i; j < i + 2; ++j) {
+                if (j > horaFinal || personasEnHora(j) + r.cantFamiliares > totalPersonas) {
+                    bloqueDisponible = false;
+                    break;
+                }
+            }
+            if (bloqueDisponible) {
+                r.horaInicio = i; // Actualizar la hora de inicio a la nueva hora.
+                for (int j = i; j < i + 2; ++j) {
+                    reservasPorHora[j].push_back(r);
+                }
+                reservaAlternativa = true;
+                break;
+            }
+        }
+        if (!reservaAlternativa) {
+            // No se encontró un bloque alternativo, la reserva se mantiene negada por tarde.
+          cout<<"tite";
+        }
+    } else if (r.horaInicio >= horaFinal) {
+        r.respuesta = 4; // Reserva negada, debe volver otro día.
+    } else {
+        // Comprobar si hay espacio en la hora solicitada y en la siguiente.
+        bool espacioDisponible = true;
+        for (int i = r.horaInicio; i < r.horaInicio + 2; ++i) {
+            if (i > horaFinal || personasEnHora(i) + r.cantFamiliares > totalPersonas) {
+                espacioDisponible = false;
+                break;
+            }
+        }
+
+        if (espacioDisponible) {
+            r.respuesta = 1; // Reserva aprobada.
+            for (int i = r.horaInicio; i < r.horaInicio + 2; ++i) {
+                reservasPorHora[i].push_back(r);
+            }
+        } else {
+            // Buscar otro bloque de tiempo disponible.
+            bool reservaAlternativa = false;
+            for (int i = horaActual; i <= horaFinal - 2; ++i) {
+                bool bloqueDisponible = true;
+                for (int j = i; j < i + 2; ++j) {
+                    if (j > horaFinal || personasEnHora(j) + r.cantFamiliares >totalPersonas) {
+                        bloqueDisponible = false;
+                        break;
+                    }
+                }
+                if (bloqueDisponible) {
+                    r.respuesta = 2; // Reserva garantizada para otra hora.
+                    r.horaInicio = i; // Actualizar la hora de inicio a la nueva hora.
+                    for (int j = i; j < i + 2; ++j) {
+                        reservasPorHora[j].push_back(r);
+                    }
+                    reservaAlternativa = true;
+                    break;
+                }
+            }
+            if (!reservaAlternativa) {
+                r.respuesta = 4; // Reserva negada, debe volver otro día.
+            }
+        }
+    }
+}
+
+//--------------------------------------- Verificacion
 void enviarHora(char* nombrePipe) {
   int fd, bytesEscritos, creado = 0;
 
@@ -353,13 +438,14 @@ void *verificarContador(void *indice) {
 }
 
 
+
 //--------------------------------------- MAIN
 
 
 
 int main(int argc, char *argv[]) {
   comando comandos;
-
+  inicializarHoras()
   // VERIFICACIÓN DE COMANDOS
   // Convierte los argumentos a string
   string arguments[argc];

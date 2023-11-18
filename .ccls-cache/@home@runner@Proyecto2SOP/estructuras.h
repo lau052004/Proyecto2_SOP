@@ -11,6 +11,7 @@ struct reserva {
   int cantFamiliares;
   int horaInicio;
   bool ultimo = false;
+  int respuesta=0; 
 };
 
 #endif /* MI_HEADER_H */
