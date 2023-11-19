@@ -4,24 +4,25 @@ Objetivo: ---
 Fecha de finalizacion: 11/19/2023
 
 Funciones que lo componen:
-void manejadorSenales(int signum);
-int EsNumero(const string &str);
-bool validarComandos(int argc, string argumentos[], comando *comandoIngresado);
-void generarInforme();
-bool ContadorComando(int argc, string argumentos[], int comando);
-bool ValoresCorrectos(int argc, string argumentos[], comando *comandoIngresado);
-void enviarResultado(const char *nombreAgente, const reserva &r);
-void inicializarHoras();
-void verificarComando(int argc, string argumentos[], comando *comandos);
-void *incrementarHora(void *indice);
-void *verificarContador(void *indice);
-void procesarSolicitudes(string nombreAgente, string archivoSolicitudes);
-void recibirRespuesta(string nombreAgente);
-void recibirhora(string nombreAgente);
-void primeraConexion(string nombreAgente, string archivoSolicitudes);
+  void MostrarEstadoDelParque();
+  void ManejadorSenales(int signum);
+  int EsNumero(const string &str);
+  bool ValidarComandos(int argc, string argumentos[], comando *comandoIngresado);
+  void GenerarInforme();
+  bool ContadorComando(int argc, string argumentos[], int comando);
+  bool ValoresCorrectos(int argc, string argumentos[], comando *comandoIngresado);
+  bool VerificarComando(int argc, string argumentos[], comando *comandos);
+  void EnviarResultado(const char *nombreAgente, const reserva &r);
+  void InicializarHoras();
+  void VerificarReservas(reserva &r);
+  void EnviarHora(char *nombrePipe);
+  void TerminarAgentes();
+  void *IncrementarHora(void *indice);
+  void *VerificarContador(void *indice);
 */
 
 #include "estructuras.h"
+#include "Controlador.h"
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -50,48 +51,6 @@ using namespace std;
 */
 
 //-------------------------------------------------------------------------------------------------------
-
-struct comando {
-  string comando_i = "-i";
-  string comando_f = "-f";
-  string comando_s = "-s";
-  string comando_t = "-t";
-  string comando_p = "-p";
-  int valor_i;
-  int valor_f;
-  int valor_s;
-  int valor_t;
-  string valor_p;
-};
-std::map<int, std::vector<reserva>> reservasPorHora;
-int solicitudesNegadas = 0;
-int solicitudesAceptadas = 0;
-int solicitudesReprogramadas = 0;
-std::map<int, int>
-    aceptadaHora; // Para mantener un registro de las personas por hora
-
-/*struct reserva {
-  string Agente;
-  string nomFamilia;
-  int cantFamiliares;
-  int horaInicio;
-};*/
-
-std::mutex mtx; // Mutex para proteger la variable compartida
-int segundosHora;
-int horaActual; // Hora actual del parque
-int horaInicio;
-int horaFinal;
-int totalPersonas; // aforo maximo
-int cantAgentes = 0;
-int posAgenteActual = 0;
-vector<reserva> reservas;
-vector<reserva> listaAgentes;
-string nombrePipe1;
-vector<string> nombrePipesReserva;
-int alarmFlag = 0;
-
-//-------------------------------------------------------------------------------------------------------
 /*
 Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
 Parámetros de entrada:
@@ -103,7 +62,8 @@ Variables globales utilizadas:
   - horaActual: Hora actual en la simulación del parque.
   - reservasPorHora: Mapa que almacena las reservas organizadas por hora.
 */
-void mostrarEstadoDelParque() {
+void MostrarEstadoDelParque() {
+    int horaSalida = horaActual - 2;
     cout << "--------------------------------------" << endl;
     cout << "Hora Actual " << horaActual << endl;
 
@@ -127,7 +87,6 @@ void mostrarEstadoDelParque() {
 
     // Familias que salen del parque
     cout << "Familias que salen del parque:" << endl;
-    int horaSalida = horaActual - 2;
     for (const auto &reserva : reservasPorHora[horaSalida]) {
         if (reserva.horaInicio == horaSalida || reserva.horaReAgendada == horaSalida) {
             cout << "- Familia " << reserva.nomFamilia << " (" << reserva.cantFamiliares << " personas)" << endl;
@@ -149,15 +108,14 @@ Variables globales utilizadas:
   - horaActual: Hora actual en la simulación del parque.
   - alarmFlag: Indicador de alarma para controlar el flujo de ejecución en el programa.
 */
-void manejadorSenales(int signum) {
+void ManejadorSenales(int signum) {
     // Mostrar el estado actual del parque
-    mostrarEstadoDelParque();
+    MostrarEstadoDelParque();
 
     // Incrementar la hora actual y cambiar el indicador de alarma
     horaActual++;
     alarmFlag = 1;
 }
-
 
 // -------------------------------------------------------------------------------------------
 /*
@@ -198,7 +156,7 @@ Función: Validar los comandos en la línea de comandos comparándolos con los c
 Variables globales utilizadas:
   - Ninguna.
 */
-bool validarComandos(int argc, string argumentos[], comando *comandoIngresado) {
+bool ValidarComandos(int argc, string argumentos[], comando *comandoIngresado) {
   // Itera sobre los argumentos (saltando de 2 en 2) para validar los comandos.
   for (int i = 1; i < argc; i = i + 2) {
     // Compara el comando actual con los comandos válidos almacenados en la
@@ -235,9 +193,11 @@ Variables globales utilizadas:
   - solicitudesReprogramadas: Contador de solicitudes reprogramadas.
   - aceptadaHora: Mapa que almacena el número de solicitudes aceptadas por hora. 
 */
-void generarInforme() {
+void GenerarInforme() {
   // Calcular personas totales por hora desde las 7 hasta las 19
   std::map<int, int> personasTotalesPorHora;
+  int maxPersonas = 0, minPersonas = std::numeric_limits<int>::max();
+  std::vector<int> horasPico, horasMenosConcurridas;
   // Inicializar el mapa personasTotalesPorHora para almacenar el recuento de personas por hora
   for (int hora = horaInicio; hora < horaFinal; ++hora) {
     personasTotalesPorHora[hora] = 0; // Inicializar con 0
@@ -253,9 +213,6 @@ void generarInforme() {
     }
   }
   // Encontrar la hora con mayor y menor número de personas
-  int maxPersonas = 0, minPersonas = std::numeric_limits<int>::max();
-  std::vector<int> horasPico, horasMenosConcurridas;
-
   // Iterar sobre el mapa personasTotalesPorHora para identificar las horas pico y menos concurridas
   for (const auto &hora : personasTotalesPorHora) {
     // Identificar la hora con la mayor cantidad de personas (hora pico)
@@ -369,8 +326,7 @@ bool ValoresCorrectos(int argc, string argumentos[], comando *comandoIngresado) 
                 argumentos[i + 1]); // Almacena el valor convertido a entero.
           }
         } else {
-          cout << "La hora incial no corresponde al horario del parque."
-               << endl;
+          cout << "La hora incial no corresponde al horario del parque."<< endl;
           return false;
         }
       }
@@ -435,7 +391,7 @@ Función: Es un conjunto de validaciones que se aplican a los argumentos ingresa
 Variables globales utilizadas:
   - Ninguna.
 */
-bool verificarComando(int argc, string argumentos[], comando *comandos) {
+bool VerificarComando(int argc, string argumentos[], comando *comandos) {
   bool cantidad_correcta, comandos_correctos, valores_correctos;
 
   // Verificación de la cantidad de argumentos
@@ -447,7 +403,7 @@ bool verificarComando(int argc, string argumentos[], comando *comandos) {
   }
 
   // Verificación de los comandos
-  comandos_correctos = validarComandos(argc, argumentos, comandos);
+  comandos_correctos = ValidarComandos(argc, argumentos, comandos);
 
   if (!comandos_correctos) {
     printf("Al menos uno de los comandos ingresados no es válido\n");
@@ -484,7 +440,7 @@ Función: Envía el resultado de una reserva a través de un pipe al agente espe
 Variables globales utilizadas:
   - No se usan.
 */
-void enviarResultado(const char *nombreAgente, const reserva &r) {
+void EnviarResultado(const char *nombreAgente, const reserva &r) {
   int fd;
 
   // Intentar abrir el pipe para escritura
@@ -522,7 +478,7 @@ Variables globales utilizadas:
   - horaFinal: Hora de finalización de la simulación del parque.
   - reservasPorHora: Mapa global que asocia cada hora con un vector de reservas.
 */
-void inicializarHoras() {
+void InicializarHoras() {
   // Inicializar el mapa 'reservasPorHora' para cada hora en el rango
   for (int hora = horaInicio; hora <= horaFinal; ++hora) {
     reservasPorHora[hora] = vector<reserva>();
@@ -548,7 +504,7 @@ Variables globales utilizadas:
   - solicitudesReprogramadas: Contador de solicitudes reprogramadas.
   - aceptadaHora: Mapa que almacena el número de solicitudes aceptadas por hora. 
 */
-void verificarReservas(reserva &r) {
+void VerificarReservas(reserva &r) {
   cout << endl;
   cout << "Verificando reserva..." << endl;
   cout << "Agente: " << r.Agente << endl;
@@ -644,7 +600,7 @@ void verificarReservas(reserva &r) {
       }
     }
   }
-  enviarResultado(r.Agente, r);
+  EnviarResultado(r.Agente, r);
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -658,7 +614,7 @@ Función: Esta función intenta abrir un pipe y envía la hora actual a través 
 Variables globales utilizadas:
   - horaActual: Hora actual en la simulación del parque que se enviará a través del pipe.
 */
-void enviarHora(char *nombrePipe) {
+void EnviarHora(char *nombrePipe) {
   int fd, bytesEscritos, creado = 0;
 
   // Intentar abrir el pipe para escritura
@@ -687,14 +643,15 @@ void enviarHora(char *nombrePipe) {
 
 //-------------------------------------------------------------------------------------------------------
 
-void terminarAgentes()
+void TerminarAgentes()
 {
-  for(int i=0; i<listaAgentes.size();i++)
+  cout << "--------------------------------------"<<endl;
+  cout << "Terminando conexión con agentes ..." << endl;
+  for(long unsigned int i=0; i<listaAgentes.size();i++)
     {
       if(access(listaAgentes[i].Agente, F_OK) == 0)
       {
-        cout << "El pipe nominal existe." << listaAgentes[i].Agente <<endl;
-        cout << listaAgentes[i].pid << endl;
+        cout << "El pipe nominal " << listaAgentes[i].Agente << " existe." << endl;
         
         if(kill(listaAgentes[i].pid, SIGUSR1)==-1) ///// MAJEO DE LA EXCEPCION
         {
@@ -702,14 +659,16 @@ void terminarAgentes()
         }
         else
         {
-          cout << "Señal enviada correctamente";
+          cout << "Señal enviada correctamente"<<endl;
         }
       }
       else
       {
-        cout << "El pipe nominal no existe." << endl;
+        cout << "El pipe nominal " << listaAgentes[i].Agente << " NO existe. El agente ya había terminado" << endl;
       }
     }
+
+  cout << "--------------------------------------"<<endl;
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -726,9 +685,9 @@ Variables globales utilizadas:
   - segundosHora: Intervalo de tiempo en segundos para incrementar la hora.
   - alarmFlag: Bandera utilizada para controlar el flujo de ejecución en función de las alarmas.
 */
-void *incrementarHora(void *indice) {
+void *IncrementarHora(void *indice) {
   // Configurar el manejador de señales para SIGALRM
-  signal(SIGALRM, manejadorSenales);
+  signal(SIGALRM, ManejadorSenales);
 
   while (true) {
     // Reiniciar la bandera de alarma y establecer una alarma
@@ -743,10 +702,10 @@ void *incrementarHora(void *indice) {
     // Verificar si se ha alcanzado la hora final o la hora de cierre
     if (horaActual > 19 || horaActual > horaFinal) {
       cout << "Hilo 1: Contador alcanzó " << horaFinal << ". Terminando los hilos." << endl;
-      // Terminar ejecucion de los agentes
-      terminarAgentes();
       // Generar informe al final del día
-      generarInforme();
+      GenerarInforme();
+      // Terminar ejecucion de los agentes
+      TerminarAgentes();
       break;
     }
   }
@@ -769,12 +728,9 @@ Variables globales utilizadas:
   - horaActual: Hora actual en la simulación del parque.
   - listaAgentes: Lista de nombres de agentes que han hecho solicitudes.
 */
-void *verificarContador(void *indice) {
+void *VerificarContador(void *indice) {
   int nbytes;
-  char n = '0';
-  char mensaje[30];
   int fd;
-  char reserva[100];
   struct reserva r;
 
   // Creacion del pipe
@@ -811,12 +767,11 @@ void *verificarContador(void *indice) {
     // Procesar si es un registro de agente o una solicitud de reserva
     if (r.registro == true) {
       printf("Nombre agente: %s\n", r.Agente);
-      cout << "PID AGENTE" << r.pid << endl;
-      enviarHora(r.Agente);
+      EnviarHora(r.Agente);
       listaAgentes.push_back(r);
       continue;
     } else if (r.registro == false) {
-      verificarReservas(r);
+      VerificarReservas(r);
       continue;
     }
   }
@@ -833,7 +788,7 @@ int main(int argc, char *argv[]) {
   comando comandos;
   bool comandosAceptados;
 
-  inicializarHoras();
+  InicializarHoras();
   // VERIFICACIÓN DE COMANDOS
   // Convierte los argumentos a string
   string arguments[argc];
@@ -845,7 +800,7 @@ int main(int argc, char *argv[]) {
     cout << "Argumento " << i << ": " << arguments[i] << std::endl;
   }*/
 
-  comandosAceptados = verificarComando(argc, arguments, &comandos);
+  comandosAceptados = VerificarComando(argc, arguments, &comandos);
 
   if (comandosAceptados == true) {
     horaActual = comandos.valor_i;
@@ -862,12 +817,12 @@ int main(int argc, char *argv[]) {
     nombrePipe1 = comandos.valor_p;
     pthread_t threads[2];
 
-    if (pthread_create(&threads[0], NULL, incrementarHora, NULL) != 0) {
+    if (pthread_create(&threads[0], NULL, IncrementarHora, NULL) != 0) {
       std::cerr << "Error al crear el hilo 1." << std::endl;
       return 1;
     }
 
-    if (pthread_create(&threads[1], NULL, verificarContador, NULL) != 0) {
+    if (pthread_create(&threads[1], NULL, VerificarContador, NULL) != 0) {
       std::cerr << "Error al crear el hilo 2." << std::endl;
       return 1;
     }

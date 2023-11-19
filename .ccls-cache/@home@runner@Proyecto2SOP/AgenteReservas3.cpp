@@ -1,13 +1,15 @@
-/*Nombre del archivo: AgenteReservas.cpp
+/*Nombre del archivo: AgenteReservas3.cpp
   Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
   Objetivo: Simular un agente que envia reservas a un controlador mediante pipes
   Fecha de finalizacion: 18/11/2023
 
   Funciones que lo componen:
-       void procesarSolicitudes(string nombreAgente, string archivoSolicitudes)
-       void recibirhora(string nombreAgente)
-       void recibirRespuesta(string nombreAgente)
-       void primeraConexion(string nombreAgente, string archivoSolicitudes)
+    void RecibirRespuesta(string nombreAgente);
+    void Sigusr1_handler(int signum);
+    void ProcesarSolicitudes(string nombreAgente, string archivoSolicitudes);
+    void Recibirhora(string nombreAgente);
+    void RecibirRespuesta(string nombreAgente);
+    void PrimeraConexion(string nombreAgente, string archivoSolicitudes);
 */
 #include <fcntl.h>
 #include <iostream>
@@ -23,24 +25,33 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <csignal>
 #include <algorithm>  // Necesario para std::remove_if
 #include <cctype>     // Necesario para std::isspace
-#include <cstdlib>
 #include "estructuras.h"
+#include "Agente.h"
+
 
 using namespace std;
-void recibirRespuesta(string nombreAgente);
 
-// Duración en segundos de una "hora"
-int segundosPorHora;
-char pipeNuevo[30] = "pipe2";
-int fd1;
-char identificador_emisor2 = '2';
-reserva r;
-bool terminado = false;
-int horaGlobal;
-string pipenom;
+
+
+//-------------------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+  - signum: Número de la señal recibida, en este caso SIGUSR1.
+Parámetros de salida:
+  - No hay parámetros de salida, ya que la función es de tipo void.
+Función: Manejador de la señal SIGUSR1 que se activa cuando el controlador indica el fin de la simulación. Muestra un mensaje y prepara al agente para terminar su ejecución.
+Variables globales utilizadas:
+  - No se utilizan variables globales.
+*/
+void Sigusr1_handler(int signum) {
+    cout << "Controlador termina la simulación. Agente terminando..." << endl;
+    // Realiza cualquier acción necesaria cuando se recibe SIGUSR1
+    //exit(0);
+}
+
 
 //-------------------------------------------------------------------------------------------------------
 /*
@@ -53,8 +64,10 @@ Variables globales:
   - fd1: Descriptor de archivo del pipe utilizado para comunicarse con el controlador.
 Función: Procesa las solicitudes de reserva contenidas en un archivo, enviando cada solicitud al controlador y esperando una respuesta.
 */
-void procesarSolicitudes(string nombreAgente, string archivoSolicitudes) {
+void ProcesarSolicitudes(string nombreAgente, string archivoSolicitudes) {
   ifstream archivo(archivoSolicitudes);
+  string linea;
+  reserva reservas;
 
   // Verificar si el archivo de solicitudes se abrió correctamente
   if (!archivo.is_open()) {
@@ -62,20 +75,20 @@ void procesarSolicitudes(string nombreAgente, string archivoSolicitudes) {
     return;
   }
 
-  string linea;
-  reserva reservas;
-  reservas.pid = getpid();
+  //-- SEÑAL
+  signal(SIGUSR1, Sigusr1_handler);
+  //--
 
-   // Leer y procesar cada línea del archivo de solicitudes
-  while (getline(archivo, linea)) {
+
+  // Leer y procesar cada línea del archivo de solicitudes
+  while (getline(archivo, linea) && !llegoS) {
+    istringstream ss(linea);
+    string token;
     // Eliminar espacios en blanco de la línea
     linea.erase(remove_if(linea.begin(), linea.end(), ::isspace), linea.end());
 
     strcpy(reservas.Agente, nombreAgente.c_str());
     reservas.registro = false;
-
-    istringstream ss(linea);
-    string token;
 
     if (getline(ss, token, ',')) {
       strncpy(reservas.nomFamilia, token.c_str(), sizeof(reservas.nomFamilia));
@@ -93,18 +106,19 @@ void procesarSolicitudes(string nombreAgente, string archivoSolicitudes) {
     if (getline(ss, token, ',')) {
       reservas.cantFamiliares = stoi(token);
     }
-
     // Envía la solicitud al controlador
     int bytesEscritos = write(fd1, &reservas, sizeof(reservas));
     if (bytesEscritos == -1) {
       perror("write");
       cerr << "Error al escribir en el pipe" << endl;
-      exit(1);
+      //exit(1);
     }
     // Recibir la respuesta del controlador
-     recibirRespuesta(nombreAgente);
+     RecibirRespuesta(nombreAgente);
      sleep(2);
   }
+
+
   // Informar que el agente ha terminado de procesar todas las solicitudes
   cout << "Agente " << nombreAgente << " termina." << endl;
 
@@ -119,17 +133,21 @@ Variables globales:
   - horaGlobal: Variable global que almacenará la hora actual recibida del controlador.
 Función: Crea un pipe nominal y espera recibir la hora actual del controlador, almacenándola en la variable global 'horaGlobal'.
 */
-void recibirhora(string nombreAgente)
+void Recibirhora(string nombreAgente)
 {
   int fd, nbytes;
-
   // Configuración de los permisos para el pipe
   mode_t fifo_mode = S_IRUSR | S_IWUSR;
+  if (mkfifo(nombreAgente.c_str(), fifo_mode) == -1) {
+    perror("mkfifo");
+    exit(1);
+  }
 
   // Crear el pipe nominal con el nombre del agente
-  if (mkfifo(nombreAgente.c_str(), fifo_mode) == -1) {
-      perror("mkfifo");
-      exit(1); // Salir si la creación del pipe falla
+  if ((fd = open(nombreAgente.c_str(), O_RDONLY)) == -1) {
+    perror("open:");
+    // Puedes agregar un manejo de error aquí si es necesario
+    exit(1);
   }
 
   // Leer la hora actual del pipe
@@ -138,7 +156,7 @@ void recibirhora(string nombreAgente)
   // Manejar los diferentes casos de la lectura
   if (nbytes == -1) {
     perror("proceso lector:");
-
+    // Puedes agregar un manejo de error aquí si es necesario
   } else if (nbytes == 0) {
     cout << "nada leido" << endl;
   }
@@ -146,7 +164,6 @@ void recibirhora(string nombreAgente)
     cout << "Hora Actual " << horaGlobal << endl;
   }
 }
-
 
 
 //-------------------------------------------------------------------------------------------------------
@@ -158,8 +175,7 @@ Variables globales:
   - No utiliza variables globales directamente.
 Función: Abre un pipe nominal y espera recibir la respuesta del controlador a una solicitud de reserva, mostrando los detalles de la respuesta.
 */
-
-void recibirRespuesta(string nombreAgente) {
+void RecibirRespuesta(string nombreAgente) {
     int fd, nbytes;
     reserva r;
 
@@ -173,12 +189,7 @@ void recibirRespuesta(string nombreAgente) {
     // Leer los datos enviados por el controlador
     nbytes = read(fd, &r, sizeof(reserva));
     if (nbytes == -1) {
-        if (errno == EAGAIN) {
-            // No hay datos disponibles para leer en este momento
-            cout << "No hay datos disponibles para leer." << endl;
-        } else {
             perror("read:");
-        }
     } else if (nbytes == 0) {
         cout << "Pipe cerrado." << endl;
     } else {
@@ -213,7 +224,6 @@ void recibirRespuesta(string nombreAgente) {
     }
 }
 
-
 //-------------------------------------------------------------------------------------------------------
 /*
 Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
@@ -226,12 +236,13 @@ Variables globales:
   - r: Estructura de tipo reserva utilizada para enviar datos al controlador.
 Función: Establece la primera conexión con el controlador enviando una estructura de registro, recibe la hora actual y procesa las solicitudes de reserva.
 */
-
-void primeraConexion(string nombreAgente, string archivoSolicitudes) {
+void PrimeraConexion(string nombreAgente, string archivoSolicitudes) {
   // Crear pipe de escritura
   int creado = 0;
+  int bytesEscritos;
   strcpy(r.Agente, nombreAgente.c_str());
   r.registro = true; // Indicar que es un registro de agente
+  r.pid = getpid();
 
   // Intentar abrir el pipe hasta que se logre la conexión
   do {
@@ -246,26 +257,26 @@ void primeraConexion(string nombreAgente, string archivoSolicitudes) {
 
   printf("Abrio el pipe, descriptor %d\n", fd1);
 
-  // Enviar la estructura de registro al controlador
-  int bytesEscritos =  write(fd1, &r, sizeof(r));
+  // Se manda la estructura de registro
+  bytesEscritos =  write(fd1, &r, sizeof(r));
+  //bytesEscritos = write(fd[1], &reservaChar, sizeof(reservaChar));
   if (bytesEscritos == -1) {
     perror("write");
     std::cerr << "Error al escribir en el pipe" << endl;
-    exit(1); // Salir si hay un error al escribir en el pipe
+    // Aquí puedes manejar el error según tus necesidades
+    exit(1);
   } else {
     cout << "Inicia el envío de solicitudes de reserva ... " << endl;
   }
 
-  // Recibir la hora actual del controlador
-  recibirhora(nombreAgente);
+  // Se recibe la hora actual
+  Recibirhora(nombreAgente);
 
-  // Procesar y enviar las solicitudes de reserva al controlador
-  procesarSolicitudes(nombreAgente, archivoSolicitudes);
+  // Llama a procesarSolicitudes para leer y enviar las reservas
+  ProcesarSolicitudes(nombreAgente, archivoSolicitudes);
 
-  // Cerrar el pipe después de enviar todas las solicitudes
   close(fd1);
 
-  // Eliminar el pipe después de terminar la comunicación
   if (unlink(nombreAgente.c_str()) == -1) {
       cerr << "Error al eliminar el pipe: " << nombreAgente << endl;
   } else {
@@ -287,14 +298,14 @@ Variables globales:
 Función: Configura el ambiente para el agente, procesa los argumentos de la línea de comandos, establece la señal para manejar y luego realiza la primera conexión.
 */
 int main(int argc, char *argv[]) {
-  // Verificar que se hayan proporcionado la cantidad correcta de argumentos
-  if (argc != 7) {
-    cerr << "Uso incorrecto. Debe proporcionar los argumentos correctamente."<< endl;
-    return 1;
-  }
-
   string nombreAgente;
   string archivoSolicitudes;
+  // Verificar que se hayan proporcionado la cantidad correcta de argumentos
+  if (argc != 7) {
+    cerr << "Uso incorrecto. Debe proporcionar los argumentos correctamente."
+         << endl;
+    return 1;
+  }
 
   // Procesar los argumentos de la línea de comandos
   for (int i = 1; i < argc; i += 2) {
@@ -303,14 +314,15 @@ int main(int argc, char *argv[]) {
     } else if (string(argv[i]) == "-a") {
       archivoSolicitudes = argv[i + 1];
     } else if (string(argv[i]) == "-p") {
-      pipenom = argv[i + 1]; //Establecer el nombre del pipe
+      pipenom = argv[i + 1];
     } else {
       cerr << "Argumento desconocido: " << argv[i] << endl;
       return 1;
     }
   }
+
   // Realizar la primera conexión y procesar las solicitudes
-  primeraConexion(nombreAgente, archivoSolicitudes);
+  PrimeraConexion(nombreAgente, archivoSolicitudes);
 
   return 0;
 }
