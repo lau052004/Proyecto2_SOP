@@ -1,5 +1,5 @@
 CC = g++
-CFLAGS = -Wall -Wextra
+CFLAGS = 
 LDFLAGS =
 
 all: controlador AgenteReservas AgenteReservas2 AgenteReservas3

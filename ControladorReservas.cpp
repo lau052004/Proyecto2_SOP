@@ -63,21 +63,23 @@ Variables globales utilizadas:
   - reservasPorHora: Mapa que almacena las reservas organizadas por hora.
 */
 void MostrarEstadoDelParque() {
-    int horaSalida = horaActual - 2;
-    cout << "--------------------------------------" << endl;
-    cout << "Hora Actual " << horaActual << endl;
+
+  cout << endl << "REPORTE : " << horaActual-1 << endl;
+    int horaSalida = horaActual - 3;
+   
+    //cout << "Hora Actual " << horaActual << endl;
 
     // Familias que entran en el parque
     cout << "Familias que entran en el parque:" << endl;
-    for (const auto &reserva : reservasPorHora[horaActual]) {
-        if (reserva.horaInicio == horaActual || reserva.horaReAgendada == horaActual) {
+    for (const auto &reserva : reservasPorHora[horaActual-1]) {
+        if (reserva.horaInicio == horaActual-1 || reserva.horaReAgendada == horaActual-1) {
             cout << "- Familia " << reserva.nomFamilia << " (" << reserva.cantFamiliares << " personas)" << endl;
         }
     }
 
     // Familias actualmente en el parque
     cout << "Familias actualmente en el parque:" << endl;
-    for (int i = 7; i < horaActual; ++i) {
+    for (int i = 7; i < horaActual-1; ++i) {
         for (const auto &reserva : reservasPorHora[i]) {
             if ((i == reserva.horaInicio || i == reserva.horaReAgendada) && i + 2 > horaActual) {
                 cout << "- Familia " << reserva.nomFamilia << " (" << reserva.cantFamiliares << " personas)" << endl;
@@ -92,8 +94,6 @@ void MostrarEstadoDelParque() {
             cout << "- Familia " << reserva.nomFamilia << " (" << reserva.cantFamiliares << " personas)" << endl;
         }
     }
-
-    cout << "--------------------------------------" << endl;
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -109,12 +109,19 @@ Variables globales utilizadas:
   - alarmFlag: Indicador de alarma para controlar el flujo de ejecución en el programa.
 */
 void ManejadorSenales(int signum) {
-    // Mostrar el estado actual del parque
-    MostrarEstadoDelParque();
-
-    // Incrementar la hora actual y cambiar el indicador de alarma
+  // Incrementar la hora actual y cambiar el indicador de alarma
+  // Sección crítica protegida por el mutex
+  {
+    lock_guard<mutex> lock(mtx);
     horaActual++;
-    alarmFlag = 1;
+  }
+  
+  cout << "--------------------------------------" << endl;
+  cout << "-----Hora actual: " << horaActual <<" -----"<< endl;
+  // Mostrar el estado actual del parque
+  MostrarEstadoDelParque();
+  cout << "--------------------------------------" << endl<<endl;
+  alarmFlag = 1;
 }
 
 // -------------------------------------------------------------------------------------------
@@ -195,9 +202,9 @@ Variables globales utilizadas:
 */
 void GenerarInforme() {
   // Calcular personas totales por hora desde las 7 hasta las 19
-  std::map<int, int> personasTotalesPorHora;
-  int maxPersonas = 0, minPersonas = std::numeric_limits<int>::max();
-  std::vector<int> horasPico, horasMenosConcurridas;
+  map<int, int> personasTotalesPorHora;
+  int maxPersonas = 0, minPersonas = numeric_limits<int>::max();
+  vector<int> horasPico, horasMenosConcurridas;
   // Inicializar el mapa personasTotalesPorHora para almacenar el recuento de personas por hora
   for (int hora = horaInicio; hora < horaFinal; ++hora) {
     personasTotalesPorHora[hora] = 0; // Inicializar con 0
@@ -455,7 +462,6 @@ void EnviarResultado(const char *nombreAgente, const reserva &r) {
   if (bytesEscritos == -1) {
     perror("write");
     cerr << "Error al escribir en el pipe" << endl;
-    exit(1); // Salir si hay un error al escribir en el pipe
   } else {
     cout << "Resultado de la reserva enviado" << endl << endl;
   }
@@ -577,8 +583,7 @@ void VerificarReservas(reserva &r) {
           break;
         bool bloqueDisponible = true;
         for (int j = i; j < i + 2; ++j) {
-          if (j > horaFinal - 2 ||
-              personasEnHora(j) + r.cantFamiliares > totalPersonas) {
+          if (j > horaFinal - 1 || personasEnHora(j) + r.cantFamiliares > totalPersonas)           {
             bloqueDisponible = false;
             break;
           }
@@ -635,10 +640,11 @@ void EnviarHora(char *nombrePipe) {
   if (bytesEscritos == -1) {
     perror("write");
     cerr << "Error al escribir en el pipe" << endl;
-    exit(1); // Salir si hay un error al escribir en el pipe
   } else {
     cout << "Hora enviada: " << horaActual << endl; 
   }
+
+  close(fd);
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -700,7 +706,7 @@ void *IncrementarHora(void *indice) {
     }
 
     // Verificar si se ha alcanzado la hora final o la hora de cierre
-    if (horaActual > 19 || horaActual > horaFinal) {
+    if (horaActual >= 19 || horaActual >= horaFinal) {
       cout << "Hilo 1: Contador alcanzó " << horaFinal << ". Terminando los hilos." << endl;
       // Generar informe al final del día
       GenerarInforme();
@@ -724,7 +730,6 @@ Parámetros de salida:
 Función: Este hilo se encarga de leer y procesar las solicitudes de reserva o registros de agentes recibidos a través de un pipe.
 Variables globales utilizadas:
   - nombrePipe1: Nombre del pipe nominal para recibir datos.
-  - mtx: Mutex para controlar el acceso a la variable compartida.
   - horaActual: Hora actual en la simulación del parque.
   - listaAgentes: Lista de nombres de agentes que han hecho solicitudes.
 */
@@ -748,11 +753,6 @@ void *VerificarContador(void *indice) {
   }
 
   while (true) {
-    // Sección crítica protegida por el mutex
-    {
-      std::lock_guard<std::mutex> lock(mtx);
-      // std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
-    }
     
     // Leer datos del pipe
     nbytes = read(fd, &r, sizeof(r));
@@ -787,6 +787,8 @@ void *VerificarContador(void *indice) {
 int main(int argc, char *argv[]) {
   comando comandos;
   bool comandosAceptados;
+  pthread_t threads[2];
+  void *returnValue;
 
   InicializarHoras();
   // VERIFICACIÓN DE COMANDOS
@@ -815,20 +817,18 @@ int main(int argc, char *argv[]) {
     // como el manejador para SIGALRM
     unlink(comandos.valor_p.c_str());
     nombrePipe1 = comandos.valor_p;
-    pthread_t threads[2];
 
     if (pthread_create(&threads[0], NULL, IncrementarHora, NULL) != 0) {
-      std::cerr << "Error al crear el hilo 1." << std::endl;
+      cerr << "Error al crear el hilo 1." << endl;
       return 1;
     }
 
     if (pthread_create(&threads[1], NULL, VerificarContador, NULL) != 0) {
-      std::cerr << "Error al crear el hilo 2." << std::endl;
+      cerr << "Error al crear el hilo 2." << endl;
       return 1;
     }
 
     // Esperar a que ambos hilos terminen
-    void *returnValue;
 
     if (pthread_join(threads[0], &returnValue) != 0) {
       fprintf(stderr, "Error al unirse al hilo 1.\n");
@@ -840,10 +840,8 @@ int main(int argc, char *argv[]) {
       return 1;
     }
 
-    cout << "Programa terminado." << std::endl;
+    cout << "Programa terminado." << endl;
 
     return 0;
   }
 }
-
-// probando

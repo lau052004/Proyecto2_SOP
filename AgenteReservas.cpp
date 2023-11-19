@@ -47,9 +47,16 @@ Variables globales utilizadas:
   - No se utilizan variables globales.
 */
 void Sigusr1_handler(int signum) {
-    cout << "Controlador termina la simulación. Agente terminando..." << endl;
-    // Realiza cualquier acción necesaria cuando se recibe SIGUSR1
-    exit(0);
+  cout << "Controlador termina la simulación. Agente terminando..." << endl;
+  // Cerrando el file descriptor del pipecrecibe
+  close(fd1);
+  if (unlink(nomAgenteGlobal.c_str()) == -1) {
+      cerr << "Error al eliminar el pipe: " << nomAgenteGlobal << endl;
+  } else {
+      cout << "Pipe eliminado exitosamente: " << nomAgenteGlobal << endl;
+  }
+  // Se termina la ejecución del proceso
+  exit(0);
 }
 
 
@@ -163,6 +170,8 @@ void Recibirhora(string nombreAgente)
   else{
     cout << "Hora Actual " << horaGlobal << endl;
   }
+  
+  close(fd);
 }
 
 
@@ -191,7 +200,7 @@ void RecibirRespuesta(string nombreAgente) {
     if (nbytes == -1) {
             perror("read:");
     } else if (nbytes == 0) {
-        cout << "Pipe cerrado." << endl;
+        cout << "No se recibió ninguna respuesta." << endl;
     } else {
         // Mostrar los detalles de la respuesta recibida
         cout<<"-------------------------------------------"<<endl;
@@ -222,6 +231,7 @@ void RecibirRespuesta(string nombreAgente) {
         }
         cout<<"-------------------------------------------"<<endl;
     }
+  close(fd);
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -262,7 +272,7 @@ void PrimeraConexion(string nombreAgente, string archivoSolicitudes) {
   //bytesEscritos = write(fd[1], &reservaChar, sizeof(reservaChar));
   if (bytesEscritos == -1) {
     perror("write");
-    std::cerr << "Error al escribir en el pipe" << endl;
+    cerr << "Error al escribir en el pipe" << endl;
     // Aquí puedes manejar el error según tus necesidades
     exit(1);
   } else {
@@ -320,6 +330,14 @@ int main(int argc, char *argv[]) {
       return 1;
     }
   }
+
+  if (unlink(nomAgenteGlobal.c_str()) == -1) {
+      cerr << "Error al eliminar el pipe: " << nomAgenteGlobal << endl;
+  } else {
+      cout << "Pipe eliminado exitosamente: " << nomAgenteGlobal << endl;
+  }
+
+  nomAgenteGlobal = nombreAgente;
   
   // Realizar la primera conexión y procesar las solicitudes
   PrimeraConexion(nombreAgente, archivoSolicitudes);

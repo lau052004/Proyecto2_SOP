@@ -17,6 +17,7 @@
 #include <sys/wait.h>
 #include <algorithm>  // Necesario para std::remove_if
 #include <cctype>  
+#include "estructuras.h"
 using namespace std;
 
 
@@ -30,6 +31,7 @@ bool terminado = false;
 int horaGlobal;
 string pipenom;
 bool llegoS=false;
+string nomAgenteGlobal;
 
 
 void RecibirRespuesta(string nombreAgente);
