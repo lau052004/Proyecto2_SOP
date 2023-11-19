@@ -13,6 +13,8 @@ struct reserva {
   int respuesta = 0;
   bool reAgendado = false;
   int horaReAgendada;
+  bool controladorActivo=true;
 };
 
-#endif /* MI_HEADER_H */
+
+#endif 

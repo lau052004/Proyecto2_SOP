@@ -1,27 +1,58 @@
+/*Nombre del archivo: ControladorReservas.cpp
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Objetivo: ---
+Fecha de finalizacion: 11/19/2023
+
+Funciones que lo componen:
+void manejadorSenales(int signum);
+int EsNumero(const string &str);
+bool validarComandos(int argc, string argumentos[], comando *comandoIngresado);
+void generarInforme();
+bool ContadorComando(int argc, string argumentos[], int comando);
+bool ValoresCorrectos(int argc, string argumentos[], comando *comandoIngresado);
+void enviarResultado(const char *nombreAgente, const reserva &r);
+void inicializarHoras();
+void verificarComando(int argc, string argumentos[], comando *comandos);
+void *incrementarHora(void *indice);
+void *verificarContador(void *indice);
+void procesarSolicitudes(string nombreAgente, string archivoSolicitudes);
+void recibirRespuesta(string nombreAgente);
+void recibirhora(string nombreAgente);
+void primeraConexion(string nombreAgente, string archivoSolicitudes);
+*/
+
+#include "estructuras.h"
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
 #include <iostream>
+#include <map>
 #include <mutex>
 #include <pthread.h>
+#include <signal.h>
+#include <sstream>
+#include <stdio.h>
 #include <string.h>
 #include <string>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 #include <vector>
-#include <cstring>
-#include <sstream>
-#include <stdio.h>
-#include <signal.h>
-#include <thread>
-#include <vector>
-#include <map>
-#include <chrono>
-#include "estructuras.h"
-
 using namespace std;
+
+
+
+/*
+
+      VALIDACIÓN DE LOS DATOS DE ENTRADA
+
+*/
+
+//-------------------------------------------------------------------------------------------------------
+
 
 struct comando {
   string comando_i = "-i";
@@ -35,6 +66,12 @@ struct comando {
   int valor_t;
   string valor_p;
 };
+std::map<int, std::vector<reserva>> reservasPorHora;
+int solicitudesNegadas = 0;
+int solicitudesAceptadas = 0;
+int solicitudesReprogramadas = 0;
+std::map<int, int>
+    aceptadaHora; // Para mantener un registro de las personas por hora
 
 /*struct reserva {
   string Agente;
@@ -44,24 +81,75 @@ struct comando {
 };*/
 
 std::mutex mtx; // Mutex para proteger la variable compartida
-int horaActual; // Hora actual del parque
 int segundosHora;
+int horaActual; // Hora actual del parque
+int horaInicio;
 int horaFinal;
-int totalPersonas; //aforo maximo
-int cantAgentes=0;
-int posAgenteActual=0;
+int totalPersonas; // aforo maximo
+int cantAgentes = 0;
+int posAgenteActual = 0;
 vector<reserva> reservas;
+vector<string> listaAgentes;
 string nombrePipe1;
-vector <string> nombrePipesReserva;
-vector <string> agentes;
+vector<string> nombrePipesReserva;
 
-int alarmFlag=0;
+int alarmFlag = 0;
 
-void signalHandler(int signum) {
-  horaActual++;
+
+
+
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+                      -  . 
+Parámetros de salida:
+                      -  . 
+Función: ---.
+*/
+void manejadorSenales(int signum) {
+  cout << "--------------------------------------" << endl;
   cout << "Hora Actual " << horaActual << endl;
+
+  // Familias que entran en el parque
+  cout << "Familias que entran en el parque:" << endl;
+  for (const auto &reserva : reservasPorHora[horaActual]) {
+    if (reserva.horaInicio == horaActual ||
+        reserva.horaReAgendada ==
+            horaActual) { // Solo mostrar al momento de entrar
+      cout << "- Familia " << reserva.nomFamilia << " ("
+           << reserva.cantFamiliares << " personas)" << endl;
+    }
+  }
+  // Familias actualmente en el parque
+  cout << "Familias actualmente en el parque:" << endl;
+  for (int i = 7; i < horaActual; ++i) {
+    for (const auto &reserva : reservasPorHora[i]) {
+      if (i == reserva.horaInicio && i + 2 > horaActual ||
+          i == reserva.horaReAgendada &&
+              i + 2 > horaActual) { // Solo mostrar si están dentro de su
+                                    // ventana de 2 horas
+        cout << "- Familia " << reserva.nomFamilia << " ("
+             << reserva.cantFamiliares << " personas)" << endl;
+      }
+    }
+  }
+  // Familias que salen del parque
+  cout << "Familias que salen del parque:" << endl;
+  int horaSalida = horaActual - 2;
+  for (const auto &reserva : reservasPorHora[horaSalida]) {
+    if (reserva.horaInicio == horaSalida ||
+        reserva.horaReAgendada ==
+            horaSalida) { // Solo mostrar al momento de salir
+      cout << "- Familia " << reserva.nomFamilia << " ("
+           << reserva.cantFamiliares << " personas)" << endl;
+    }
+  }
+
+  cout << "--------------------------------------" << endl;
   alarmFlag = 1;
+  horaActual++;
 }
+
 
 // FUNCIONES VERIFICACIÓN DE COMANDOS
 // -------------------------------------------------------------------------------------------
@@ -95,6 +183,62 @@ bool validarComandos(int argc, string argumentos[], comando *comandoIngresado) {
   }
 
   return true;
+}
+
+void generarInforme() {
+  // Calcular personas totales por hora desde las 7 hasta las 19
+  std::map<int, int> personasTotalesPorHora;
+  for (int hora = horaInicio; hora < horaFinal; ++hora) {
+      personasTotalesPorHora[hora] = 0;  // Inicializar con 0
+  }
+  for (const auto &par : reservasPorHora) {
+      if (par.first >= 7 && par.first < 19) {
+          for (const auto &reserva : par.second) {
+              personasTotalesPorHora[par.first] += reserva.cantFamiliares;
+          }
+      }
+  }
+  // Encontrar la hora con mayor y menor número de personas
+  int maxPersonas = 0, minPersonas = std::numeric_limits<int>::max();
+  std::vector<int> horasPico, horasMenosConcurridas;
+  
+  for (const auto &hora : personasTotalesPorHora) {
+      if (hora.second > maxPersonas) {
+          maxPersonas = hora.second;
+          horasPico.clear();
+          horasPico.push_back(hora.first);
+      } else if (hora.second == maxPersonas) {
+          horasPico.push_back(hora.first);
+      }
+  
+      if (hora.second < minPersonas) {
+          minPersonas = hora.second;
+          horasMenosConcurridas.clear();
+          horasMenosConcurridas.push_back(hora.first);
+      } else if (hora.second == minPersonas) {
+          horasMenosConcurridas.push_back(hora.first);
+      }
+  }
+  
+  // Mostrar el informe
+  cout << "Informe del Parque:\n";
+  cout << "Solicitudes Negadas: " << solicitudesNegadas << "\n";
+  cout << "Solicitudes Aceptadas: " << solicitudesAceptadas << "\n";
+  cout << "Solicitudes Reprogramadas: " << solicitudesReprogramadas << "\n";
+  cout << "Horas Pico: ";
+  for (int hora : horasPico) {
+    cout << hora << " ";
+  }
+  cout << "\nHoras con Menor Número de Personas: ";
+  for (int hora : horasMenosConcurridas) {
+    cout << hora << " ";
+  }
+
+  cout << "\nSolicitudes Aceptadas por Hora:\n";
+  for (const auto &hora : aceptadaHora) {
+    cout << "Hora " << hora.first << ": " << hora.second
+         << " solicitudes aceptadas\n";
+  }
 }
 
 bool ContadorComando(int argc, string argumentos[], int comando) {
@@ -193,7 +337,7 @@ bool ValoresCorrectos(int argc, string argumentos[],
   return true; // Todos los valores son válidos.
 }
 
-void verificarComando(int argc, string argumentos[], comando *comandos) {
+bool verificarComando(int argc, string argumentos[], comando *comandos) {
   bool cantidad_correcta, comandos_correctos, valores_correctos;
 
   // Verificación de la cantidad de argumentos
@@ -201,7 +345,7 @@ void verificarComando(int argc, string argumentos[], comando *comandos) {
     printf("Cantidad de argumentos ERRONEA \n");
     printf("Uso: $./controlador –i horaInicio –f horafinal –s segundoshora –t "
            "totalpersonas –p pipecrecibe \n");
-    return;
+    return false;
   }
 
   // Verificación de los comandos
@@ -209,7 +353,7 @@ void verificarComando(int argc, string argumentos[], comando *comandos) {
 
   if (!comandos_correctos) {
     printf("Al menos uno de los comandos ingresados no es válido\n");
-    return;
+    return false;
   }
 
   // Verificar si cada comando está una vez
@@ -217,7 +361,7 @@ void verificarComando(int argc, string argumentos[], comando *comandos) {
     cantidad_correcta = ContadorComando(argc, argumentos, i);
     if (cantidad_correcta == false) {
       printf("Cantidad de comandos incorrecta: Se repite un comando\n");
-      return;
+      return false;
     }
   }
   // Verificar que los datos ingresados para cada comando sean válidos
@@ -225,7 +369,7 @@ void verificarComando(int argc, string argumentos[], comando *comandos) {
 
   if (valores_correctos == false) {
     printf("Los datos ingresados para al menos un comando son erroneos \n");
-    return;
+    return false;
   }
 
   // Imprimir la estructura
@@ -239,127 +383,143 @@ void verificarComando(int argc, string argumentos[], comando *comandos) {
        << ", Valor t: " << comandos->valor_t << endl;
   cout << "Comando p: " << comandos->comando_p
        << ", Valor p: " << comandos->valor_p << endl;*/
+
+  return true;
 }
 
 // -------------------------------------------------------------- HILOS
 
 // Map global que tiene como clave la hora y como valor un vector de reservas.
-std::map<int, std::vector<reserva>> reservasPorHora;
 
-void enviarResultado(const char* nombreAgente, const reserva& r) {
-    int fd;
-    while ((fd = open(nombreAgente, O_WRONLY)) == -1) {
-        perror("pipe");
-        cout << "Se volverá a intentar después" << endl;
-        sleep(3);
-    }
-    cout << "Se abrió el pipe para escribir, descriptor " << fd << endl;
+void enviarResultado(const char *nombreAgente, const reserva &r) {
+  int fd;
+  while ((fd = open(nombreAgente, O_WRONLY)) == -1) {
+    perror("pipe");
+    cout << "Se volverá a intentar después" << endl;
+    sleep(1);
+  }
+  // cout << "Se abrió el pipe para escribir, descriptor " << fd << endl;
 
-    // Enviar la estructura reserva.
-    int bytesEscritos = write(fd, &r, sizeof(reserva));
-    if (bytesEscritos == -1) {
-        perror("write");
-        cerr << "Error al escribir en el pipe" << endl;
-        exit(1);
-    } else {
-        cout << "Resultado de la reserva enviado" << endl;
-    }
-    close(fd);
-    cout << "Se cierra el pipe para escritura" << endl;
+  // Enviar la estructura reserva.
+  int bytesEscritos = write(fd, &r, sizeof(reserva));
+  if (bytesEscritos == -1) {
+    perror("write");
+    cerr << "Error al escribir en el pipe" << endl;
+    exit(1);
+  } else {
+    cout << "Resultado de la reserva enviado" << endl << endl;
+  }
+  close(fd);
+  // cout << "Se cierra el pipe para escritura" << endl;
 }
 
 // Función para inicializar las horas en el map.
 void inicializarHoras() {
-    for (int hora = 7; hora <= 19; ++hora) {
-        reservasPorHora[hora] = std::vector<reserva>();
-    }
+  for (int hora = horaInicio; hora <= horaFinal; ++hora) {
+    reservasPorHora[hora] = vector<reserva>();
+  }
 }
 
-void verificarReservas(reserva& r) {
-    cout<<endl;
-    cout << "Verificando reserva..." << endl; 
-    cout << "Agente: " << r.Agente <<endl; 
-    cout << "nombreFamilia: " << r.nomFamilia <<endl; 
-    cout << "cant: " << r.cantFamiliares <<endl; 
-    cout << "hora: " << r.horaInicio << endl;
-  
-    auto personasEnHora = [&](int hora) {
-        int totalPersonasHora = 0;
-        for (const auto& reserva : reservasPorHora[hora]) {
-            totalPersonasHora += reserva.cantFamiliares;
-        }
-        return totalPersonasHora;
-    };
+void verificarReservas(reserva &r) {
+  cout << endl;
+  cout << "Verificando reserva..." << endl;
+  cout << "Agente: " << r.Agente << endl;
+  cout << "Mombre de Familia: " << r.nomFamilia << endl;
+  cout << "Cantidad: " << r.cantFamiliares << endl;
+  cout << "Hora: " << r.horaInicio << endl;
 
-    // Comprobar si la hora solicitada ya pasó.
-    if (r.horaInicio < horaActual) {
-        r.respuesta = 3; // Reserva negada por tarde e intentar encontrar otro bloque de tiempo disponible.
-        bool reservaAlternativa = false;
-        for (int i = horaActual + 1; i <= horaFinal - 2; ++i) {
-            bool bloqueDisponible = true;
-            for (int j = i; j < i + 2; ++j) {
-                if (j > horaFinal || personasEnHora(j) + r.cantFamiliares > totalPersonas) {
-                    bloqueDisponible = false;
-                    break;
-                }
-            }
-            if (bloqueDisponible) {
-                r.horaReAgendada = i; // Actualizar la hora de inicio a la nueva hora.
-                for (int j = i; j < i + 2; ++j) {
-                    reservasPorHora[j].push_back(r);
-                }
-                r.reAgendado = true;
-                break;
-            }
-        }
-    } else if (r.horaInicio >= horaFinal) {
-        r.respuesta = 4; // Reserva negada, debe volver otro día.
-    } else {
-        // Comprobar si hay espacio en la hora solicitada y en la siguiente.
-        bool espacioDisponible = true;
-        for (int i = r.horaInicio; i < r.horaInicio + 2; ++i) {
-            if (i > horaFinal || personasEnHora(i) + r.cantFamiliares > totalPersonas) {
-                espacioDisponible = false;
-                break;
-            }
-        }
-
-        if (espacioDisponible) {
-            r.respuesta = 1; // Reserva aprobada.
-            for (int i = r.horaInicio; i < r.horaInicio + 2; ++i) {
-                reservasPorHora[i].push_back(r);
-            }
-        } else {
-            // Buscar otro bloque de tiempo disponible.
-            bool reservaAlternativa = false;
-            for (int i = horaActual; i <= horaFinal - 2; ++i) {
-                bool bloqueDisponible = true;
-                for (int j = i; j < i + 2; ++j) {
-                    if (j > horaFinal || personasEnHora(j) + r.cantFamiliares >totalPersonas) {
-                        bloqueDisponible = false;
-                        break;
-                    }
-                }
-                if (bloqueDisponible) {
-                    r.respuesta = 2; // Reserva garantizada para otra hora.
-                    r.horaReAgendada = i; // Actualizar la hora de inicio a la nueva hora.
-                    for (int j = i; j < i + 2; ++j) {
-                        reservasPorHora[j].push_back(r);
-                    }
-                    reservaAlternativa = true;
-                    break;
-                }
-            }
-            if (!reservaAlternativa) {
-                r.respuesta = 4; // Reserva negada, debe volver otro día.
-            }
-        }
+  auto personasEnHora = [&](int hora) {
+    int totalPersonasHora = 0;
+    for (const auto &reserva : reservasPorHora[hora]) {
+      totalPersonasHora += reserva.cantFamiliares;
     }
+    return totalPersonasHora;
+  };
+
+  if (r.horaInicio < horaActual) {
+    r.respuesta = 3; // Intentar encontrar otro bloque de tiempo disponible.
+    bool reservaAlternativa = false;
+    for (int i = horaActual + 1; i <= horaFinal - 2; ++i) {
+      if (i > 17)
+        break; // Asegurarse de que no se exceda la hora límite de 17.
+      bool bloqueDisponible = true;
+      for (int j = i; j < i + 2; ++j) {
+        if (j > horaFinal - 2 ||
+            personasEnHora(j) + r.cantFamiliares > totalPersonas) {
+          bloqueDisponible = false;
+          break;
+        }
+      }
+      if (bloqueDisponible) {
+        r.horaReAgendada = i; // Actualizar la hora de inicio a la nueva hora.
+        for (int j = i; j < i + 2; ++j) {
+          reservasPorHora[j].push_back(r);
+        }
+        r.reAgendado = true;
+        reservaAlternativa = true;
+        solicitudesReprogramadas++;
+        break;
+      }
+    }
+    if (!reservaAlternativa) {
+      solicitudesNegadas++;
+    }
+  } else if (r.horaInicio > horaFinal - 2 || r.horaInicio > 17) {
+    r.respuesta = 4; // Reserva negada, debe volver otro día.
+    solicitudesNegadas++;
+  } else {
+    bool espacioDisponible = true;
+    for (int i = r.horaInicio; i < r.horaInicio + 2; ++i) {
+      if (i > horaFinal - 2 ||
+          personasEnHora(i) + r.cantFamiliares > totalPersonas) {
+        espacioDisponible = false;
+        break;
+      }
+    }
+
+    if (espacioDisponible) {
+      r.respuesta = 1;              // Reserva aprobada.
+      aceptadaHora[r.horaInicio]++; // Actualizar el contador de solicitudes
+                                    // aceptadas para esta hora
+      solicitudesAceptadas++;
+      for (int i = r.horaInicio; i < r.horaInicio + 2; ++i) {
+        reservasPorHora[i].push_back(r);
+      }
+    } else {
+      bool reservaAlternativa = false;
+      for (int i = horaActual; i <= horaFinal - 2; ++i) {
+        if (i > 17)
+          break;
+        bool bloqueDisponible = true;
+        for (int j = i; j < i + 2; ++j) {
+          if (j > horaFinal - 2 ||
+              personasEnHora(j) + r.cantFamiliares > totalPersonas) {
+            bloqueDisponible = false;
+            break;
+          }
+        }
+        if (bloqueDisponible) {
+          r.respuesta = 2;      // Reserva garantizada para otra hora.
+          r.horaReAgendada = i; // Actualizar la hora de inicio a la nueva hora.
+          solicitudesReprogramadas++;
+          for (int j = i; j < i + 2; ++j) {
+            reservasPorHora[j].push_back(r);
+          }
+          reservaAlternativa = true;
+          break;
+        }
+      }
+      if (!reservaAlternativa) {
+        r.respuesta = 4; // Reserva negada, debe volver otro día.
+        solicitudesNegadas++;
+      }
+    }
+  }
   enviarResultado(r.Agente, r);
 }
 
 //--------------------------------------- Verificacion
-void enviarHora(char* nombrePipe) {
+void enviarHora(char *nombrePipe) {
   int fd, bytesEscritos, creado = 0;
 
   do {
@@ -372,36 +532,35 @@ void enviarHora(char* nombrePipe) {
       creado = 1;
   } while (creado == 0);
 
-  printf("Abrio el pipe de escritura %d\n", fd);
+  // printf("Abrio el pipe de escritura %d\n", fd);
 
   // Escribir hora en el pipe
   bytesEscritos = write(fd, &horaActual, sizeof(int));
 
   if (bytesEscritos == -1) {
     perror("write");
-    std::cerr << "Error al escribir en el pipe" << std::endl;
-    // Aquí puedes manejar el error según tus necesidades
+    cerr << "Error al escribir en el pipe" << endl << endl;
     exit(1);
   } else {
-    std::cout << "Hora enviada: " << horaActual << std::endl;
+    cout << "Hora enviada: " << horaActual << std::endl;
   }
 }
 //--------------------------------------------
 
-
 void *incrementarHora(void *indice) {
-  signal(SIGALRM, signalHandler);
+  signal(SIGALRM, manejadorSenales);
   while (true) {
     alarmFlag = 0;
-    alarm(3);
+    alarm(segundosHora);
     while (alarmFlag != 1) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
-    if (horaActual >= 19 || horaActual >= horaFinal) {
-        cout << "Hilo 1: Contador alcanzó " << horaFinal << ". Terminando los hilos." << endl;
-
-        break;
+    if (horaActual > 19 || horaActual > horaFinal) {
+      cout << "Hilo 1: Contador alcanzó " << horaFinal
+           << ". Terminando los hilos." << endl;
+      generarInforme();
+      break;
     }
   }
   exit(0);
@@ -430,48 +589,44 @@ void *verificarContador(void *indice) {
   }
 
   while (true) {
-      // Sección crítica protegida por el mutex
-      {
-          std::lock_guard<std::mutex> lock(mtx);
-          //std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
-      }
+    // Sección crítica protegida por el mutex
+    {
+      std::lock_guard<std::mutex> lock(mtx);
+      // std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
+    }
 
-      nbytes = read(fd, &r, sizeof(r));
+    nbytes = read(fd, &r, sizeof(r));
 
-      if (nbytes == -1) {
-          perror("pipe:");
-          exit(0);
-      } 
-      else if(nbytes==0)
-      {
-        continue;
-      }
-    
-      if(r.registro==true) {
-        printf("Nombre agente: %s\n", r.Agente);
-        agentes.push_back(r.Agente);
-        enviarHora(r.Agente);
-        continue;
-      } else if(r.registro==false) {
-          verificarReservas(r);
-          continue;
-      }
+    if (nbytes == -1) {
+      perror("pipe:");
+      exit(0);
+    } else if (nbytes == 0) {
+      continue;
+    }
+
+    if (r.registro == true) {
+      printf("Nombre agente: %s\n", r.Agente);
+      enviarHora(r.Agente);
+      listaAgentes.push_back(r.Agente);
+      continue;
+    } else if (r.registro == false) {
+      verificarReservas(r);
+      continue;
+    }
   }
 
-    // Cerrar el pipe después de salir del bucle
-    close(fd);
+  // Cerrar el pipe después de salir del bucle
+  close(fd);
 
-    pthread_exit(NULL);
+  pthread_exit(NULL);
 }
-
-
 
 //--------------------------------------- MAIN
 
-
-
 int main(int argc, char *argv[]) {
   comando comandos;
+  bool comandosAceptados;
+  
   inicializarHoras();
   // VERIFICACIÓN DE COMANDOS
   // Convierte los argumentos a string
@@ -484,46 +639,51 @@ int main(int argc, char *argv[]) {
     cout << "Argumento " << i << ": " << arguments[i] << std::endl;
   }*/
 
-  verificarComando(argc, arguments, &comandos);
+  comandosAceptados = verificarComando(argc, arguments, &comandos);
 
-  horaActual = comandos.valor_i;
-  segundosHora = comandos.valor_s;
-  horaFinal = comandos.valor_f;
-  totalPersonas = comandos.valor_t;
+  if(comandosAceptados==true)
+  {
+    horaActual = comandos.valor_i;
+    horaInicio=horaActual;
+    segundosHora = comandos.valor_s;
+    horaFinal = comandos.valor_f;
+    totalPersonas = comandos.valor_t;
 
-  // ---------------------- INICIANDO EL PROGRAMA
-  //signal (SIGALRM, (sighandler_t)signalHandler);
-  //signal (SIGALRM, (sighandler_t)signalHandler); // Establece signalHandler como el manejador para SIGALRM
-  
-  nombrePipe1 = comandos.valor_p;
-  pthread_t threads[2];
+    // ---------------------- INICIANDO EL PROGRAMA
+    // signal (SIGALRM, (sighandler_t)signalHandler);
+    // signal (SIGALRM, (sighandler_t)signalHandler); // Establece signalHandler
+    // como el manejador para SIGALRM
+    unlink(comandos.valor_p.c_str());
+    nombrePipe1 = comandos.valor_p;
+    pthread_t threads[2];
 
-  if (pthread_create(&threads[0], NULL, incrementarHora, NULL) != 0) {
-    std::cerr << "Error al crear el hilo 1." << std::endl;
-    return 1;
+    if (pthread_create(&threads[0], NULL, incrementarHora, NULL) != 0) {
+      std::cerr << "Error al crear el hilo 1." << std::endl;
+      return 1;
+    }
+
+    if (pthread_create(&threads[1], NULL, verificarContador, NULL) != 0) {
+      std::cerr << "Error al crear el hilo 2." << std::endl;
+      return 1;
+    }
+
+    // Esperar a que ambos hilos terminen
+    void *returnValue;
+
+    if (pthread_join(threads[0], &returnValue) != 0) {
+      fprintf(stderr, "Error al unirse al hilo 1.\n");
+      return 1;
+    }
+
+    if (pthread_join(threads[1], &returnValue) != 0) {
+      fprintf(stderr, "Error al unirse al hilo 2.\n");
+      return 1;
+    }
+
+    cout << "Programa terminado." << std::endl;
+
+    return 0;
   }
-
-  if (pthread_create(&threads[1], NULL, verificarContador, NULL) != 0) {
-    std::cerr << "Error al crear el hilo 2." << std::endl;
-    return 1;
-  }
-
-  // Esperar a que ambos hilos terminen
-  void *returnValue;
-
-  if (pthread_join(threads[0], &returnValue) != 0) {
-    fprintf(stderr, "Error al unirse al hilo 1.\n");
-    return 1;
-  }
-
-  if (pthread_join(threads[1], &returnValue) != 0) {
-    fprintf(stderr, "Error al unirse al hilo 2.\n");
-    return 1;
-  }
-
-  std::cout << "Programa terminado." << std::endl;
-
-  return 0;
 }
 
 // probando
