@@ -23,10 +23,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <csignal>
 #include <algorithm>  // Necesario para std::remove_if
 #include <cctype>     // Necesario para std::isspace
-#include <cstdlib>
 #include "estructuras.h"
 
 using namespace std;
@@ -41,6 +39,17 @@ reserva r;
 bool terminado = false;
 int horaGlobal;
 string pipenom;
+bool llegoS=false;
+
+
+// ---- SEÑAL
+void sigusr1_handler(int signum) {
+    cout << "Controlador termina la simulación. Agente terminando..." << endl;
+    // Realiza cualquier acción necesaria cuando se recibe SIGUSR1
+    //exit(0);
+}
+//---
+
 
 //-------------------------------------------------------------------------------------------------------
 /*
@@ -64,47 +73,52 @@ void procesarSolicitudes(string nombreAgente, string archivoSolicitudes) {
 
   string linea;
   reserva reservas;
-  reservas.pid = getpid();
 
-   // Leer y procesar cada línea del archivo de solicitudes
-  while (getline(archivo, linea)) {
-    // Eliminar espacios en blanco de la línea
-    linea.erase(remove_if(linea.begin(), linea.end(), ::isspace), linea.end());
+  //-- SEÑAL
+  signal(SIGUSR1, sigusr1_handler);
+  //--
 
-    strcpy(reservas.Agente, nombreAgente.c_str());
-    reservas.registro = false;
 
-    istringstream ss(linea);
-    string token;
+    // Leer y procesar cada línea del archivo de solicitudes
+    while (getline(archivo, linea) && !llegoS) {
+      // Eliminar espacios en blanco de la línea
+      linea.erase(remove_if(linea.begin(), linea.end(), ::isspace), linea.end());
 
-    if (getline(ss, token, ',')) {
-      strncpy(reservas.nomFamilia, token.c_str(), sizeof(reservas.nomFamilia));
-      reservas.nomFamilia[sizeof(reservas.nomFamilia) - 1] = '\0'; 
-    }
+      strcpy(reservas.Agente, nombreAgente.c_str());
+      reservas.registro = false;
 
-    if (getline(ss, token, ',')) {
-      reservas.horaInicio = stoi(token);
-      // Descartar la solicitud si la hora de inicio es anterior a la hora global actual
-      if (reservas.horaInicio < horaGlobal) {
-        continue;
+      istringstream ss(linea);
+      string token;
+
+      if (getline(ss, token, ',')) {
+        strncpy(reservas.nomFamilia, token.c_str(), sizeof(reservas.nomFamilia));
+        reservas.nomFamilia[sizeof(reservas.nomFamilia) - 1] = '\0'; 
       }
+
+      if (getline(ss, token, ',')) {
+        reservas.horaInicio = stoi(token);
+        // Descartar la solicitud si la hora de inicio es anterior a la hora global actual
+        if (reservas.horaInicio < horaGlobal) {
+          continue;
+        }
+      }
+
+      if (getline(ss, token, ',')) {
+        reservas.cantFamiliares = stoi(token);
+      }
+      // Envía la solicitud al controlador
+      int bytesEscritos = write(fd1, &reservas, sizeof(reservas));
+      if (bytesEscritos == -1) {
+        perror("write");
+        cerr << "Error al escribir en el pipe" << endl;
+        //exit(1);
+      }
+      // Recibir la respuesta del controlador
+       recibirRespuesta(nombreAgente);
+       sleep(2);
     }
 
-    if (getline(ss, token, ',')) {
-      reservas.cantFamiliares = stoi(token);
-    }
 
-    // Envía la solicitud al controlador
-    int bytesEscritos = write(fd1, &reservas, sizeof(reservas));
-    if (bytesEscritos == -1) {
-      perror("write");
-      cerr << "Error al escribir en el pipe" << endl;
-      exit(1);
-    }
-    // Recibir la respuesta del controlador
-     recibirRespuesta(nombreAgente);
-     sleep(2);
-  }
   // Informar que el agente ha terminado de procesar todas las solicitudes
   cout << "Agente " << nombreAgente << " termina." << endl;
 
@@ -125,11 +139,16 @@ void recibirhora(string nombreAgente)
 
   // Configuración de los permisos para el pipe
   mode_t fifo_mode = S_IRUSR | S_IWUSR;
+  if (mkfifo(nombreAgente.c_str(), fifo_mode) == -1) {
+    perror("mkfifo");
+    exit(1);
+  }
 
   // Crear el pipe nominal con el nombre del agente
-  if (mkfifo(nombreAgente.c_str(), fifo_mode) == -1) {
-      perror("mkfifo");
-      exit(1); // Salir si la creación del pipe falla
+  if ((fd = open(nombreAgente.c_str(), O_RDONLY)) == -1) {
+    perror("open:");
+    // Puedes agregar un manejo de error aquí si es necesario
+    exit(1);
   }
 
   // Leer la hora actual del pipe
@@ -138,7 +157,7 @@ void recibirhora(string nombreAgente)
   // Manejar los diferentes casos de la lectura
   if (nbytes == -1) {
     perror("proceso lector:");
-
+    // Puedes agregar un manejo de error aquí si es necesario
   } else if (nbytes == 0) {
     cout << "nada leido" << endl;
   }
@@ -146,7 +165,6 @@ void recibirhora(string nombreAgente)
     cout << "Hora Actual " << horaGlobal << endl;
   }
 }
-
 
 
 //-------------------------------------------------------------------------------------------------------
@@ -158,7 +176,6 @@ Variables globales:
   - No utiliza variables globales directamente.
 Función: Abre un pipe nominal y espera recibir la respuesta del controlador a una solicitud de reserva, mostrando los detalles de la respuesta.
 */
-
 void recibirRespuesta(string nombreAgente) {
     int fd, nbytes;
     reserva r;
@@ -173,12 +190,7 @@ void recibirRespuesta(string nombreAgente) {
     // Leer los datos enviados por el controlador
     nbytes = read(fd, &r, sizeof(reserva));
     if (nbytes == -1) {
-        if (errno == EAGAIN) {
-            // No hay datos disponibles para leer en este momento
-            cout << "No hay datos disponibles para leer." << endl;
-        } else {
             perror("read:");
-        }
     } else if (nbytes == 0) {
         cout << "Pipe cerrado." << endl;
     } else {
@@ -213,7 +225,6 @@ void recibirRespuesta(string nombreAgente) {
     }
 }
 
-
 //-------------------------------------------------------------------------------------------------------
 /*
 Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
@@ -226,12 +237,12 @@ Variables globales:
   - r: Estructura de tipo reserva utilizada para enviar datos al controlador.
 Función: Establece la primera conexión con el controlador enviando una estructura de registro, recibe la hora actual y procesa las solicitudes de reserva.
 */
-
 void primeraConexion(string nombreAgente, string archivoSolicitudes) {
   // Crear pipe de escritura
   int creado = 0;
   strcpy(r.Agente, nombreAgente.c_str());
   r.registro = true; // Indicar que es un registro de agente
+  r.pid = getpid();
 
   // Intentar abrir el pipe hasta que se logre la conexión
   do {
@@ -246,26 +257,26 @@ void primeraConexion(string nombreAgente, string archivoSolicitudes) {
 
   printf("Abrio el pipe, descriptor %d\n", fd1);
 
-  // Enviar la estructura de registro al controlador
+  // Se manda la estructura de registro
   int bytesEscritos =  write(fd1, &r, sizeof(r));
+  //bytesEscritos = write(fd[1], &reservaChar, sizeof(reservaChar));
   if (bytesEscritos == -1) {
     perror("write");
     std::cerr << "Error al escribir en el pipe" << endl;
-    exit(1); // Salir si hay un error al escribir en el pipe
+    // Aquí puedes manejar el error según tus necesidades
+    exit(1);
   } else {
     cout << "Inicia el envío de solicitudes de reserva ... " << endl;
   }
 
-  // Recibir la hora actual del controlador
+  // Se recibe la hora actual
   recibirhora(nombreAgente);
 
-  // Procesar y enviar las solicitudes de reserva al controlador
+  // Llama a procesarSolicitudes para leer y enviar las reservas
   procesarSolicitudes(nombreAgente, archivoSolicitudes);
 
-  // Cerrar el pipe después de enviar todas las solicitudes
   close(fd1);
 
-  // Eliminar el pipe después de terminar la comunicación
   if (unlink(nombreAgente.c_str()) == -1) {
       cerr << "Error al eliminar el pipe: " << nombreAgente << endl;
   } else {
@@ -289,7 +300,8 @@ Función: Configura el ambiente para el agente, procesa los argumentos de la lí
 int main(int argc, char *argv[]) {
   // Verificar que se hayan proporcionado la cantidad correcta de argumentos
   if (argc != 7) {
-    cerr << "Uso incorrecto. Debe proporcionar los argumentos correctamente."<< endl;
+    cerr << "Uso incorrecto. Debe proporcionar los argumentos correctamente."
+         << endl;
     return 1;
   }
 
@@ -303,12 +315,13 @@ int main(int argc, char *argv[]) {
     } else if (string(argv[i]) == "-a") {
       archivoSolicitudes = argv[i + 1];
     } else if (string(argv[i]) == "-p") {
-      pipenom = argv[i + 1]; //Establecer el nombre del pipe
+      pipenom = argv[i + 1];
     } else {
       cerr << "Argumento desconocido: " << argv[i] << endl;
       return 1;
     }
   }
+
   // Realizar la primera conexión y procesar las solicitudes
   primeraConexion(nombreAgente, archivoSolicitudes);
 

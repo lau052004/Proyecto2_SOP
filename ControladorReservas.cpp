@@ -43,8 +43,6 @@ void primeraConexion(string nombreAgente, string archivoSolicitudes);
 #include <vector>
 using namespace std;
 
-
-
 /*
 
       VALIDACIÓN DE LOS DATOS DE ENTRADA
@@ -52,7 +50,6 @@ using namespace std;
 */
 
 //-------------------------------------------------------------------------------------------------------
-
 
 struct comando {
   string comando_i = "-i";
@@ -89,76 +86,96 @@ int totalPersonas; // aforo maximo
 int cantAgentes = 0;
 int posAgenteActual = 0;
 vector<reserva> reservas;
-vector<string> listaAgentes;
+vector<reserva> listaAgentes;
 string nombrePipe1;
 vector<string> nombrePipesReserva;
-
 int alarmFlag = 0;
 
-
-
-
+//-------------------------------------------------------------------------------------------------------
 /*
 Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
 Parámetros de entrada:
-                      -  . 
+                      - No hay parámetros de entrada.
 Parámetros de salida:
-                      -  . 
-Función: ---.
+                      - No hay parámetros de salida, ya que la función es de tipo void.
+Función: Imprime el estado actual del parque, mostrando las familias que entran, están actualmente en el parque y salen del parque.
+Variables globales utilizadas:
+  - horaActual: Hora actual en la simulación del parque.
+  - reservasPorHora: Mapa que almacena las reservas organizadas por hora.
+*/
+void mostrarEstadoDelParque() {
+    cout << "--------------------------------------" << endl;
+    cout << "Hora Actual " << horaActual << endl;
+
+    // Familias que entran en el parque
+    cout << "Familias que entran en el parque:" << endl;
+    for (const auto &reserva : reservasPorHora[horaActual]) {
+        if (reserva.horaInicio == horaActual || reserva.horaReAgendada == horaActual) {
+            cout << "- Familia " << reserva.nomFamilia << " (" << reserva.cantFamiliares << " personas)" << endl;
+        }
+    }
+
+    // Familias actualmente en el parque
+    cout << "Familias actualmente en el parque:" << endl;
+    for (int i = 7; i < horaActual; ++i) {
+        for (const auto &reserva : reservasPorHora[i]) {
+            if ((i == reserva.horaInicio || i == reserva.horaReAgendada) && i + 2 > horaActual) {
+                cout << "- Familia " << reserva.nomFamilia << " (" << reserva.cantFamiliares << " personas)" << endl;
+            }
+        }
+    }
+
+    // Familias que salen del parque
+    cout << "Familias que salen del parque:" << endl;
+    int horaSalida = horaActual - 2;
+    for (const auto &reserva : reservasPorHora[horaSalida]) {
+        if (reserva.horaInicio == horaSalida || reserva.horaReAgendada == horaSalida) {
+            cout << "- Familia " << reserva.nomFamilia << " (" << reserva.cantFamiliares << " personas)" << endl;
+        }
+    }
+
+    cout << "--------------------------------------" << endl;
+}
+
+//-------------------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+                      - signum: Número de señal recibida.
+Parámetros de salida:
+                      - No hay parámetros de salida, ya que la función es de tipo void.
+Función: Actualiza la hora actual del parque, cambia el indicador de alarma y muestra el estado actual del parque.
+Variables globales utilizadas:
+  - horaActual: Hora actual en la simulación del parque.
+  - alarmFlag: Indicador de alarma para controlar el flujo de ejecución en el programa.
 */
 void manejadorSenales(int signum) {
-  cout << "--------------------------------------" << endl;
-  cout << "Hora Actual " << horaActual << endl;
+    // Mostrar el estado actual del parque
+    mostrarEstadoDelParque();
 
-  // Familias que entran en el parque
-  cout << "Familias que entran en el parque:" << endl;
-  for (const auto &reserva : reservasPorHora[horaActual]) {
-    if (reserva.horaInicio == horaActual ||
-        reserva.horaReAgendada ==
-            horaActual) { // Solo mostrar al momento de entrar
-      cout << "- Familia " << reserva.nomFamilia << " ("
-           << reserva.cantFamiliares << " personas)" << endl;
-    }
-  }
-  // Familias actualmente en el parque
-  cout << "Familias actualmente en el parque:" << endl;
-  for (int i = 7; i < horaActual; ++i) {
-    for (const auto &reserva : reservasPorHora[i]) {
-      if (i == reserva.horaInicio && i + 2 > horaActual ||
-          i == reserva.horaReAgendada &&
-              i + 2 > horaActual) { // Solo mostrar si están dentro de su
-                                    // ventana de 2 horas
-        cout << "- Familia " << reserva.nomFamilia << " ("
-             << reserva.cantFamiliares << " personas)" << endl;
-      }
-    }
-  }
-  // Familias que salen del parque
-  cout << "Familias que salen del parque:" << endl;
-  int horaSalida = horaActual - 2;
-  for (const auto &reserva : reservasPorHora[horaSalida]) {
-    if (reserva.horaInicio == horaSalida ||
-        reserva.horaReAgendada ==
-            horaSalida) { // Solo mostrar al momento de salir
-      cout << "- Familia " << reserva.nomFamilia << " ("
-           << reserva.cantFamiliares << " personas)" << endl;
-    }
-  }
-
-  cout << "--------------------------------------" << endl;
-  alarmFlag = 1;
-  horaActual++;
+    // Incrementar la hora actual y cambiar el indicador de alarma
+    horaActual++;
+    alarmFlag = 1;
 }
 
 
-// FUNCIONES VERIFICACIÓN DE COMANDOS
 // -------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+                      - &str:  intenta determinar si un string es convertible en un número válido. 
+Parámetros de salida:
+                      -Si la conversión es exitosa y todos los caracteres del string fueron usados en el intento de convertirlo a número, la función devuelve 1 indicando que el string es un número. De lo contrario, la función devuelve 0 indicando que el string no es un número válido.
+
+Función: Verificar si &str representa un número válido.
+Variables globales utilizadas:
+  - Ninguna.
+*/
 int EsNumero(const string &str) {
   try {
     size_t pos = 0;
     stod(str, &pos); // Intenta convertir el string a un número de coma flotante
-    // Verifica si se consumió todo el string, lo que indica que es un número
-    // válido
+    // Verifica si se consumió todo el string, lo que indica que es un número válido
     return pos == str.length() ? 1 : 0;
   } catch (const std::invalid_argument &) {
     // La conversión arroja una excepción si el string no es un número válido
@@ -166,6 +183,21 @@ int EsNumero(const string &str) {
   }
 }
 
+//-------------------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+                      - argc: Número de argumentos en la línea de comandos.
+                      - argumentos[]: Array de cadenas de caracteres que contiene los argumentos proporcionados en la línea de comandos al ejecutar el programa.
+                      - *comandoIngresado:  Es un puntero a una estructura que contiene información sobre los comandos válidos que se pueden ingresar al programa. Este puntero está se utiliza para acceder a los campos de la estructura que representan los comandos válidos.
+
+Parámetros de salida:
+                      -Retorna true si al menos uno de los comandos proporcionados coincide con alguno de los comandos válidos almacenados en la estructura comandoIngresado. En caso contrario, devuelve false.
+
+Función: Validar los comandos en la línea de comandos comparándolos con los comandos válidos almacenados en la estructura.
+Variables globales utilizadas:
+  - Ninguna.
+*/
 bool validarComandos(int argc, string argumentos[], comando *comandoIngresado) {
   // Itera sobre los argumentos (saltando de 2 en 2) para validar los comandos.
   for (int i = 1; i < argc; i = i + 2) {
@@ -185,41 +217,66 @@ bool validarComandos(int argc, string argumentos[], comando *comandoIngresado) {
   return true;
 }
 
+//-------------------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+                      - No hay parámetros de entrada. 
+Parámetros de salida:
+                      - No hay parámetros de salida, ya que la función es de tipo void.
+
+Función:  realiza un análisis de las reservas registradas por hora y genera un reporte donde muestra las s olicitudes negadas, las solicitudes aceptadas, las solicitudes reprogramadas y las horas pico.
+Variables globales utilizadas:
+  - horaInicio: Hora de inicio de la simulación del parque.
+  - horaFinal: Hora de finalización de la simulación del parque.
+  - reservasPorHora: Mapa global que asocia cada hora con un vector de reservas.
+  - solicitudesNegadas: Contador de solicitudes negadas.
+  - solicitudesAceptadas: Contador de solicitudes aceptadas.
+  - solicitudesReprogramadas: Contador de solicitudes reprogramadas.
+  - aceptadaHora: Mapa que almacena el número de solicitudes aceptadas por hora. 
+*/
 void generarInforme() {
   // Calcular personas totales por hora desde las 7 hasta las 19
   std::map<int, int> personasTotalesPorHora;
+  // Inicializar el mapa personasTotalesPorHora para almacenar el recuento de personas por hora
   for (int hora = horaInicio; hora < horaFinal; ++hora) {
-      personasTotalesPorHora[hora] = 0;  // Inicializar con 0
+    personasTotalesPorHora[hora] = 0; // Inicializar con 0
   }
+  // Iterar sobre la estructura reservasPorHora para contar personas por hora
   for (const auto &par : reservasPorHora) {
-      if (par.first >= 7 && par.first < 19) {
-          for (const auto &reserva : par.second) {
-              personasTotalesPorHora[par.first] += reserva.cantFamiliares;
-          }
+    // Verificar si la hora está dentro del rango de 7 a 18 horas
+    if (par.first >= 7 && par.first < 19) {
+      // Sumar la cantidad de personas de cada reserva para cada hora
+      for (const auto &reserva : par.second) {
+        personasTotalesPorHora[par.first] += reserva.cantFamiliares;
       }
+    }
   }
   // Encontrar la hora con mayor y menor número de personas
   int maxPersonas = 0, minPersonas = std::numeric_limits<int>::max();
   std::vector<int> horasPico, horasMenosConcurridas;
-  
+
+  // Iterar sobre el mapa personasTotalesPorHora para identificar las horas pico y menos concurridas
   for (const auto &hora : personasTotalesPorHora) {
-      if (hora.second > maxPersonas) {
-          maxPersonas = hora.second;
-          horasPico.clear();
-          horasPico.push_back(hora.first);
-      } else if (hora.second == maxPersonas) {
-          horasPico.push_back(hora.first);
-      }
-  
-      if (hora.second < minPersonas) {
-          minPersonas = hora.second;
-          horasMenosConcurridas.clear();
-          horasMenosConcurridas.push_back(hora.first);
-      } else if (hora.second == minPersonas) {
-          horasMenosConcurridas.push_back(hora.first);
-      }
+    // Identificar la hora con la mayor cantidad de personas (hora pico)
+    if (hora.second > maxPersonas) {
+      maxPersonas = hora.second;
+      horasPico.clear();
+      horasPico.push_back(hora.first);
+    } else if (hora.second == maxPersonas) {
+      horasPico.push_back(hora.first);
+    }
+
+    // Identificar la hora con la menor cantidad de personas (hora menos concurrida)
+    if (hora.second < minPersonas) {
+      minPersonas = hora.second;
+      horasMenosConcurridas.clear();
+      horasMenosConcurridas.push_back(hora.first);
+    } else if (hora.second == minPersonas) {
+      horasMenosConcurridas.push_back(hora.first);
+    }
   }
-  
+
   // Mostrar el informe
   cout << "Informe del Parque:\n";
   cout << "Solicitudes Negadas: " << solicitudesNegadas << "\n";
@@ -241,6 +298,20 @@ void generarInforme() {
   }
 }
 
+//-------------------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+                      - argc: Número de argumentos en la línea de comandos.
+                      - argumentos[]: Array de cadenas de caracteres que contiene los argumentos proporcionados en la línea de comandos al ejecutar el programa.
+                      - comando: Índice que representa la posición del comando que se quiere contar en los argumentos.
+Parámetros de salida:
+                      - devuelve un valor booleano que indica si el comando especificado aparece exactamente una vez en la lista de argumentos pasados por la línea de comandos.
+
+Función: Recorre los argumentos de la línea de comandos y cuenta cuántas veces aparece un comando específico en esa lista. Devuelve true si el comando aparece exactamente una vez y false en caso contrario.
+Variables globales utilizadas:
+  - Ninguna.
+*/
 bool ContadorComando(int argc, string argumentos[], int comando) {
   int contador = 0; // contador para contar las ocurrencias del comando
   // Itera sobre los argumentos (saltando de 2 en 2, debido a que va el comando
@@ -258,8 +329,21 @@ bool ContadorComando(int argc, string argumentos[], int comando) {
   }
 }
 
-bool ValoresCorrectos(int argc, string argumentos[],
-                      comando *comandoIngresado) {
+//-------------------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+                      - argc: Número de argumentos en la línea de comandos.
+                      - argumentos[]: Array de cadenas de caracteres que contiene los argumentos proporcionados en la línea de comandos al ejecutar el programa.
+                      - *comandoIngresado:  Es un puntero a una estructura que contiene información sobre los comandos válidos que se pueden ingresar al programa. Este puntero está se utiliza para acceder a los campos de la estructura que representan los comandos válidos.
+Parámetros de salida:
+                      - Devuelve un valor booleano que indica si los valores asociados a los comandos pasados por la línea de comandos cumplen con ciertas condiciones preestablecidas. No tiene parámetros de salida adicionales.
+
+Función: Se encarga de validar los valores asociados a ciertos comandos de la línea de comandos y devuelve un booleano indicando si estos valores son correctos o no.
+Variables globales utilizadas:
+  - Ninguna.
+*/
+bool ValoresCorrectos(int argc, string argumentos[], comando *comandoIngresado) {
   int num;
   bool inicial = false, final = false;
   // Itera sobre los argumentos (saltando de 2 en 2) para verificar los valores
@@ -337,6 +421,20 @@ bool ValoresCorrectos(int argc, string argumentos[],
   return true; // Todos los valores son válidos.
 }
 
+//-------------------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+                      - argc: Número de argumentos en la línea de comandos.
+                      - argumentos[]: Array de cadenas de caracteres que contiene los argumentos proporcionados en la línea de comandos al ejecutar el programa.
+                      - *comandos: Es un puntero a una estructura comando que almacena información sobre los comandos válidos y sus valores asociados.
+Parámetros de salida:
+                      - Devuelve un valor booleano que indica si los comandos y sus valores asociados pasados por la línea de comandos son correctos y cumplen con ciertas condiciones preestablecidas. No tiene parámetros de salida adicionales.
+
+Función: Es un conjunto de validaciones que se aplican a los argumentos ingresados en la línea de comandos para asegurarse de que se cumplan ciertas condiciones. En caso de que alguna de las condiciones de verificación falle la función muestra un mensaje específico de error y retorna false, lo que indica que los comandos ingresados no son válidos. Si todas las comprobaciones se superan con éxito, la función devuelve true.
+Variables globales utilizadas:
+  - Ninguna.
+*/
 bool verificarComando(int argc, string argumentos[], comando *comandos) {
   bool cantidad_correcta, comandos_correctos, valores_correctos;
 
@@ -371,55 +469,85 @@ bool verificarComando(int argc, string argumentos[], comando *comandos) {
     printf("Los datos ingresados para al menos un comando son erroneos \n");
     return false;
   }
-
-  // Imprimir la estructura
-  /*cout << "Comando i: " << comandos->comando_i
-       << ", Valor i: " << comandos->valor_i << endl;
-  cout << "Comando f: " << comandos->comando_f
-       << ", Valor f: " << comandos->valor_f << endl;
-  cout << "Comando s: " << comandos->comando_s
-       << ", Valor s: " << comandos->valor_s << endl;
-  cout << "Comando t: " << comandos->comando_t
-       << ", Valor t: " << comandos->valor_t << endl;
-  cout << "Comando p: " << comandos->comando_p
-       << ", Valor p: " << comandos->valor_p << endl;*/
-
   return true;
 }
 
-// -------------------------------------------------------------- HILOS
-
-// Map global que tiene como clave la hora y como valor un vector de reservas.
-
+//-------------------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+  - nombreAgente: Nombre del agente al cual se enviará el resultado de la reserva.
+  - r: Estructura de reserva que contiene los detalles del resultado de la reserva.
+Parámetros de salida:
+  - No hay parámetros de salida, ya que la función es de tipo void.
+Función: Envía el resultado de una reserva a través de un pipe al agente especificado.
+Variables globales utilizadas:
+  - No se usan.
+*/
 void enviarResultado(const char *nombreAgente, const reserva &r) {
   int fd;
+
+  // Intentar abrir el pipe para escritura
   while ((fd = open(nombreAgente, O_WRONLY)) == -1) {
     perror("pipe");
     cout << "Se volverá a intentar después" << endl;
-    sleep(1);
+    sleep(1); // Esperar antes de reintentar
   }
-  // cout << "Se abrió el pipe para escribir, descriptor " << fd << endl;
 
-  // Enviar la estructura reserva.
+  // Enviar la estructura de reserva a través del pipe
   int bytesEscritos = write(fd, &r, sizeof(reserva));
   if (bytesEscritos == -1) {
     perror("write");
     cerr << "Error al escribir en el pipe" << endl;
-    exit(1);
+    exit(1); // Salir si hay un error al escribir en el pipe
   } else {
     cout << "Resultado de la reserva enviado" << endl << endl;
   }
+
+  // Cerrar el pipe después de enviar los datos
   close(fd);
-  // cout << "Se cierra el pipe para escritura" << endl;
 }
 
-// Función para inicializar las horas en el map.
+
+//-------------------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+                      - No hay parámetros de entrada directos, pero la función utiliza variables globales.
+Parámetros de salida:
+                      - No hay parámetros de salida, ya que la función es de tipo void.
+Función: Inicializa el mapa global 'reservasPorHora' asignando un vector vacío de reservas para cada hora entre 'horaInicio' y 'horaFinal'.
+Variables globales utilizadas:
+  - horaInicio: Hora de inicio de la simulación del parque.
+  - horaFinal: Hora de finalización de la simulación del parque.
+  - reservasPorHora: Mapa global que asocia cada hora con un vector de reservas.
+*/
 void inicializarHoras() {
+  // Inicializar el mapa 'reservasPorHora' para cada hora en el rango
   for (int hora = horaInicio; hora <= horaFinal; ++hora) {
     reservasPorHora[hora] = vector<reserva>();
   }
 }
 
+
+//-------------------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+                      - r: Referencia a una estructura de reserva que contiene los detalles de la reserva a verificar.
+Parámetros de salida:
+                      - No hay parámetros de salida, ya que se modifica la estructura de reserva directamente.
+Función: Verifica la viabilidad de una reserva dada, ajustando la reserva si es necesario.
+Variables globales utilizadas:
+  - horaActual: Hora actual en la simulación del parque.
+  - horaFinal: Hora de cierre del parque.
+  - totalPersonas: Capacidad máxima de personas en el parque.
+  - reservasPorHora: Mapa que almacena las reservas organizadas por hora.
+  - solicitudesNegadas: Contador de solicitudes negadas.
+  - solicitudesAceptadas: Contador de solicitudes aceptadas.
+  - solicitudesReprogramadas: Contador de solicitudes reprogramadas.
+  - aceptadaHora: Mapa que almacena el número de solicitudes aceptadas por hora. 
+*/
 void verificarReservas(reserva &r) {
   cout << endl;
   cout << "Verificando reserva..." << endl;
@@ -428,6 +556,7 @@ void verificarReservas(reserva &r) {
   cout << "Cantidad: " << r.cantFamiliares << endl;
   cout << "Hora: " << r.horaInicio << endl;
 
+  // Función lambda para calcular el total de personas en una hora dada
   auto personasEnHora = [&](int hora) {
     int totalPersonasHora = 0;
     for (const auto &reserva : reservasPorHora[hora]) {
@@ -518,54 +647,127 @@ void verificarReservas(reserva &r) {
   enviarResultado(r.Agente, r);
 }
 
-//--------------------------------------- Verificacion
+//-------------------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+                      - nombrePipe: Nombre del pipe utilizado para enviar la hora actual.
+Parámetros de salida:
+                      - No hay parámetros de salida, ya que la función es de tipo void.
+Función: Esta función intenta abrir un pipe y envía la hora actual a través de él.
+Variables globales utilizadas:
+  - horaActual: Hora actual en la simulación del parque que se enviará a través del pipe.
+*/
 void enviarHora(char *nombrePipe) {
   int fd, bytesEscritos, creado = 0;
 
+  // Intentar abrir el pipe para escritura
   do {
     fd = open(nombrePipe, O_WRONLY);
     if (fd == -1) {
       perror("pipe");
       printf(" Se volvera a intentar despues\n");
-      sleep(3);
+      sleep(3); // Esperar antes de reintentar
     } else
-      creado = 1;
+      creado = 1; // Indicar que el pipe se abrió correctamente
   } while (creado == 0);
 
-  // printf("Abrio el pipe de escritura %d\n", fd);
-
-  // Escribir hora en el pipe
+  // Escribir la hora actual en el pipe
   bytesEscritos = write(fd, &horaActual, sizeof(int));
 
+  // Manejar los errores de escritura
   if (bytesEscritos == -1) {
     perror("write");
-    cerr << "Error al escribir en el pipe" << endl << endl;
-    exit(1);
+    cerr << "Error al escribir en el pipe" << endl;
+    exit(1); // Salir si hay un error al escribir en el pipe
   } else {
-    cout << "Hora enviada: " << horaActual << std::endl;
+    cout << "Hora enviada: " << horaActual << endl; 
   }
 }
-//--------------------------------------------
 
+//-------------------------------------------------------------------------------------------------------
+
+void terminarAgentes()
+{
+  for(int i=0; i<listaAgentes.size();i++)
+    {
+      if(access(listaAgentes[i].Agente, F_OK) == 0)
+      {
+        cout << "El pipe nominal existe." << listaAgentes[i].Agente <<endl;
+        
+        if(kill(listaAgentes[i].pid, SIGUSR1)==-1) ///// MAJEO DE LA EXCEPCION
+        {
+          perror("kill:");
+        }
+        else
+        {
+          cout << "Señal enviada correctamente";
+        }
+      }
+      else
+      {
+        cout << "El pipe nominal no existe." << endl;
+      }
+    }
+}
+
+//-------------------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+                      - indice: Puntero a void utilizado para pasar argumentos al hilo.
+Parámetros de salida:
+                      - No hay parámetros de salida, la función es de tipo void* y retorna NULL al terminar.
+Función: Este hilo se encarga de incrementar la hora actual del parque y generar un informe cuando se alcanza la hora de cierre.
+Variables globales utilizadas:
+  - horaActual: Hora actual en la simulación del parque.
+  - horaFinal: Hora de cierre del parque.
+  - segundosHora: Intervalo de tiempo en segundos para incrementar la hora.
+  - alarmFlag: Bandera utilizada para controlar el flujo de ejecución en función de las alarmas.
+*/
 void *incrementarHora(void *indice) {
+  // Configurar el manejador de señales para SIGALRM
   signal(SIGALRM, manejadorSenales);
+
   while (true) {
+    // Reiniciar la bandera de alarma y establecer una alarma
     alarmFlag = 0;
     alarm(segundosHora);
+
+    // Esperar a que la bandera de alarma cambie a 1
     while (alarmFlag != 1) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
+    // Verificar si se ha alcanzado la hora final o la hora de cierre
     if (horaActual > 19 || horaActual > horaFinal) {
-      cout << "Hilo 1: Contador alcanzó " << horaFinal
-           << ". Terminando los hilos." << endl;
+      cout << "Hilo 1: Contador alcanzó " << horaFinal << ". Terminando los hilos." << endl;
+      // Terminar ejecucion de los agentes
+      terminarAgentes();
+      // Generar informe al final del día
       generarInforme();
       break;
     }
   }
+
   exit(0);
 }
 
+
+//-------------------------------------------------------------------------------------------------------
+/*
+Autores: Jose Manuel Rodriguez, Laura Valentina Ovalle, Juan Miguel Zuluaga
+Parámetros de entrada:
+                      - indice: Puntero a void utilizado para pasar argumentos al hilo.
+Parámetros de salida:
+                      - No hay parámetros de salida, la función es de tipo void* y retorna NULL.
+Función: Este hilo se encarga de leer y procesar las solicitudes de reserva o registros de agentes recibidos a través de un pipe.
+Variables globales utilizadas:
+  - nombrePipe1: Nombre del pipe nominal para recibir datos.
+  - mtx: Mutex para controlar el acceso a la variable compartida.
+  - horaActual: Hora actual en la simulación del parque.
+  - listaAgentes: Lista de nombres de agentes que han hecho solicitudes.
+*/
 void *verificarContador(void *indice) {
   int nbytes;
   char n = '0';
@@ -594,7 +796,8 @@ void *verificarContador(void *indice) {
       std::lock_guard<std::mutex> lock(mtx);
       // std::cout << "Hilo 2: Contador = " << horaActual << std::endl;
     }
-
+    
+    // Leer datos del pipe
     nbytes = read(fd, &r, sizeof(r));
 
     if (nbytes == -1) {
@@ -604,10 +807,11 @@ void *verificarContador(void *indice) {
       continue;
     }
 
+    // Procesar si es un registro de agente o una solicitud de reserva
     if (r.registro == true) {
       printf("Nombre agente: %s\n", r.Agente);
       enviarHora(r.Agente);
-      listaAgentes.push_back(r.Agente);
+      listaAgentes.push_back(r);
       continue;
     } else if (r.registro == false) {
       verificarReservas(r);
@@ -626,7 +830,7 @@ void *verificarContador(void *indice) {
 int main(int argc, char *argv[]) {
   comando comandos;
   bool comandosAceptados;
-  
+
   inicializarHoras();
   // VERIFICACIÓN DE COMANDOS
   // Convierte los argumentos a string
@@ -641,10 +845,9 @@ int main(int argc, char *argv[]) {
 
   comandosAceptados = verificarComando(argc, arguments, &comandos);
 
-  if(comandosAceptados==true)
-  {
+  if (comandosAceptados == true) {
     horaActual = comandos.valor_i;
-    horaInicio=horaActual;
+    horaInicio = horaActual;
     segundosHora = comandos.valor_s;
     horaFinal = comandos.valor_f;
     totalPersonas = comandos.valor_t;
